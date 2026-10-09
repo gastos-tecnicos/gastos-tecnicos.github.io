@@ -7,11 +7,15 @@
 <meta name="apple-mobile-web-app-title" content="Gastos">
 <meta name="theme-color" content="#1c1f23">
 <title>Gastos de Trabajo</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 /* ====== CONFIGURACIÓN: pega aquí los datos de tu proyecto de Supabase ======
    Supabase > Project Settings > API
@@ -19,8 +23,6 @@
    - anon / public key     -> SUPABASE_ANON_KEY  (la "anon", NUNCA la service_role) */
 const SUPABASE_URL = 'https://luolhazkytgtwknmnjfb.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_ikjAmifY2Naj5m3fDcWoGA_VaApVeJz';
-/* Nombre que sale en el informe PDF (si lo dejas vacío, sale tu correo) */
-const TITULAR = '';
 </script>
 <style>
 /* Layout: una columna tipo app de móvil (máx. 560px): cabecera oscura con lo que te deben, meses, totales y lista por día */
@@ -104,7 +106,13 @@ form{display:flex;flex-direction:column;gap:14px;padding-top:16px}
 .two.solo{grid-template-columns:minmax(0,1fr)}
 input[type=text],input[type=email],input[type=password],input[type=date],input[type=time]{height:46px;border:1px solid var(--field);border-radius:10px;padding:0 12px;background:var(--surface);width:100%;min-width:0;font-size:16px}
 .seg{display:grid;gap:6px}
-.seg.c4{grid-template-columns:repeat(4,minmax(0,1fr))} .seg.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.seg.c4{grid-template-columns:repeat(4,minmax(0,1fr))} .seg.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.seg.filtro{padding-block:6px 2px}
+.seg.filtro button{min-height:40px}
+.seg.filtro button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.nofoto{color:var(--pend);font-weight:600}
+.backup{margin-top:28px;padding:16px;border:1px dashed var(--field);border-radius:12px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.backup b{font-size:14px} .backup span{font-size:13px;color:var(--muted)} .seg.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .seg button{min-height:46px;border:1px solid var(--field);background:var(--surface);border-radius:10px;font-size:13px;padding:0 4px}
 .seg button[aria-pressed="true"]{border:2px solid var(--fg);background:var(--accent);color:var(--on-accent);font-weight:600}
 .seg.state button[data-v="pendiente"][aria-pressed="true"]{background:var(--pend-bg);color:var(--pend);border-color:var(--pend)}
@@ -155,7 +163,11 @@ a{color:var(--fg)}
 <!-- ===== App ===== -->
 <div class="wrap" id="vApp" hidden>
   <header class="top">
-    <div class="toprow"><span class="eyebrow">Te deben en total</span><button class="out" id="btnOut" type="button">Salir</button></div>
+    <div class="toprow"><span class="eyebrow">Te deben en total</span><span style="display:flex;gap:6px"><button class="out" id="btnNombre" type="button">Mi nombre</button><button class="out" id="btnOut" type="button">Salir</button></span></div>
+    <form id="nombreForm" hidden novalidate style="padding-top:6px;gap:8px;flex-direction:row;align-items:flex-end;flex-wrap:wrap">
+      <div class="f" style="flex:1 1 200px"><label for="fNombre" style="color:var(--head-muted)">Nombre completo para los informes</label><input type="text" id="fNombre" autocomplete="name" style="color:var(--fg)"></div>
+      <button class="out" type="submit" style="min-height:46px;color:var(--head-fg)">Guardar</button>
+    </form>
     <span class="big num" id="totPend">0,00 €</span>
     <span class="sub" id="totSub">Todo lo pendiente de todos los meses</span>
   </header>
@@ -164,11 +176,22 @@ a{color:var(--fg)}
   <div class="cats" id="cats"></div>
   <div class="monthbar"><h2 id="mTitle"></h2><span id="mTotal"></span></div>
   <div class="tools">
-    <button class="ghost" id="btnPdf" type="button">Exportar mes (PDF)</button>
+    <button class="ghost" id="btnPdf" type="button">PDF del mes</button>
+    <button class="ghost" id="btnReclamar" type="button">Reclamar pendientes (PDF)</button>
     <button class="ghost" id="btnExport" type="button">CSV</button>
     <button class="ghost warn" id="btnPayMonth" type="button" hidden>Marcar mes como cobrado</button>
   </div>
+  <div class="seg c3 filtro" id="segFiltro" role="group" aria-label="Mostrar">
+    <button type="button" data-f="todos">Todos</button>
+    <button type="button" data-f="pendiente">Pendientes</button>
+    <button type="button" data-f="cobrado">Cobrados</button>
+  </div>
   <div class="list" id="list"></div>
+  <section class="backup">
+    <b>Copia de seguridad</b>
+    <span>Descarga todos tus gastos (Excel y datos completos) con las fotos de los tickets en un .zip. Hazla una vez al mes y guárdala en Drive o en el ordenador.</span>
+    <button class="ghost" id="btnCopia" type="button">Descargar copia de seguridad</button>
+  </section>
 </div>
 <button class="fab" id="btnAdd" type="button" hidden>+ Añadir gasto</button>
 
@@ -298,6 +321,15 @@ $('loginForm').addEventListener('submit',async e=>{
   if(error){ err.textContent = /invalid/i.test(error.message)?'Correo o contraseña incorrectos.':'No se pudo entrar. Comprueba la conexión.'; err.hidden=false; }
 });
 $('btnOut').addEventListener('click',()=>sb.auth.signOut());
+const nombreUsuario = () => (user?.user_metadata?.nombre||'').trim();
+$('btnNombre').addEventListener('click',()=>{const f=$('nombreForm');f.hidden=!f.hidden;if(!f.hidden){$('fNombre').value=nombreUsuario();$('fNombre').focus();}});
+$('nombreForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const nombre=$('fNombre').value.trim().slice(0,80);
+  const {data,error}=await sb.auth.updateUser({data:{nombre}});
+  if(error){flash('No se pudo guardar el nombre. Vuelve a intentarlo.');return;}
+  user=data.user; $('nombreForm').hidden=true; flash('Nombre guardado. Saldrá en tus informes PDF.');
+});
 
 /* fotos: URLs firmadas temporales */
 const urlCache={};
@@ -329,16 +361,24 @@ function render(){
   $('btnPayMonth').hidden=!(mPend>0);
   if(payArmed && !(mPend>0)) disarmPay();
 
+  for(const b of $('segFiltro').children) b.setAttribute('aria-pressed',String(b.dataset.f===filtro));
   if(!loaded){ $('list').innerHTML='<div class="empty"><b>Cargando tus gastos…</b></div>'; return; }
   if(!mi.length){
     $('list').innerHTML=`<div class="empty"><b>No hay gastos en ${esc(ymLabel(mes,false))}</b><span>Pulsa «Añadir gasto» al pagar una dieta, un parking o la zona azul, o cuando vendas una fibra. Para un mes pasado, cambia la fecha en el formulario.</span></div>`;
     return;
   }
-  mi.sort((a,b)=>orden(b).localeCompare(orden(a)));
+  const vis=mi.filter(g=>filtro==='todos'||(filtro==='cobrado'?g.estado==='cobrado':g.estado!=='cobrado'));
+  if(!vis.length){
+    $('list').innerHTML=`<div class="empty"><b>${filtro==='cobrado'?'Nada cobrado':'Nada pendiente'} en ${esc(ymLabel(mes,false))}</b><span>Pulsa «Todos» para ver el resto de gastos del mes.</span></div>`;
+    return;
+  }
+  vis.sort((a,b)=>orden(b).localeCompare(orden(a)));
   let html='',last='';
-  for(const g of mi){
+  for(const g of vis){
     if(g.fecha!==last){html+=`<div class="day">${esc(dayLabel(g.fecha))}</div>`;last=g.fecha;}
-    const sub=[detalle(g),g.lugar,g.nota,g.foto?'con foto':''].filter(Boolean).map(esc).join(' · ');
+    const partes=[detalle(g),g.lugar,g.nota,g.foto?'con foto':''].filter(Boolean).map(esc);
+    if(necesitaFoto(g)&&!g.foto) partes.push('<span class="nofoto">sin foto</span>');
+    const sub=partes.join(' · ');
     const cob=g.estado==='cobrado';
     html+=`<div class="row" data-id="${esc(g.id)}" role="button" tabindex="0" aria-label="Editar ${esc(TIPOS[g.tipo])} del ${esc(g.fecha)}${g.hora?' a las '+esc(g.hora):''}">
       <div class="l"><b>${g.hora?`<span class="num">${esc(g.hora)}</span> · `:''}${esc(TIPOS[g.tipo]||g.tipo)}</b>${sub?`<span>${sub}</span>`:''}</div>
@@ -349,10 +389,13 @@ function render(){
 }
 
 let fatalT;
-function flash(msg){const n=$('notice');n.textContent=msg;n.hidden=false;clearTimeout(fatalT);fatalT=setTimeout(()=>{n.hidden=true;},5000);}
+function flash(msg,ms){const n=$('notice');n.textContent=msg;n.hidden=false;clearTimeout(fatalT);fatalT=setTimeout(()=>{n.hidden=true;},ms||5000);}
+function resetPdfBtns(){pdfArmado=null;$('btnPdf').textContent='PDF del mes';$('btnReclamar').textContent='Reclamar pendientes (PDF)';}
 
 /* ---------- lista ---------- */
-$('months').addEventListener('click',e=>{const b=e.target.closest('[data-ym]');if(b){mes=b.dataset.ym;disarmPay();render();}});
+$('months').addEventListener('click',e=>{const b=e.target.closest('[data-ym]');if(b){mes=b.dataset.ym;disarmPay();resetPdfBtns();render();}});
+let filtro='todos';
+$('segFiltro').addEventListener('click',e=>{const b=e.target.closest('[data-f]');if(b){filtro=b.dataset.f;render();}});
 $('list').addEventListener('click',async e=>{
   const t=e.target.closest('[data-toggle]');
   if(t){
@@ -376,19 +419,34 @@ $('btnPayMonth').addEventListener('click',async()=>{
   if(error) flash('No se pudo marcar el mes. Vuelve a intentarlo.'); else cargar();
 });
 
-$('btnExport').addEventListener('click',()=>{
-  const mi=items.filter(g=>ymOf(g.fecha)===mes).sort((a,b)=>orden(a).localeCompare(orden(b)));
-  if(!mi.length){flash('No hay gastos en este mes para exportar.');return;}
+/* ---------- utilidades de exportación ---------- */
+const fechaEs = f => f.split('-').reverse().join('/');
+const necesitaFoto = g => g.tipo!=='comision';
+const asc = lista => [...lista].sort((a,b)=>orden(a).localeCompare(orden(b)));
+function descargar(blob,nombre){
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nombre;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+function csvDe(lista,fotoNombre){
   const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
-  const lines=[['Fecha','Hora','Tipo','Detalle','Lugar','Nota','Importe','Estado'].join(';')];
-  for(const g of mi) lines.push([g.fecha.split('-').reverse().join('/'),g.hora||'',TIPOS[g.tipo],detalle(g),g.lugar,g.nota,eur0(g.importe),g.estado==='cobrado'?'Cobrado':'Pendiente'].map(q).join(';'));
-  lines.push(['','','','','','Total',eur0(sum(mi)),''].map(q).join(';'));
-  const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`gastos-${mes}.csv`;
-  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  const cab=['Fecha','Hora','Tipo','Detalle','Lugar','Nota','Importe','Estado']; if(fotoNombre) cab.push('Foto');
+  const lines=[cab.join(';')];
+  for(const g of lista){
+    const r=[fechaEs(g.fecha),g.hora||'',TIPOS[g.tipo],detalle(g),g.lugar,g.nota,eur0(g.importe),g.estado==='cobrado'?'Cobrado':'Pendiente'];
+    if(fotoNombre) r.push(fotoNombre[g.id]||'');
+    lines.push(r.map(q).join(';'));
+  }
+  lines.push(['','','','','','Total',eur0(sum(lista)),''].map(q).join(';'));
+  return new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+}
+
+$('btnExport').addEventListener('click',()=>{
+  const mi=asc(items.filter(g=>ymOf(g.fecha)===mes));
+  if(!mi.length){flash('No hay gastos en este mes para exportar.');return;}
+  descargar(csvDe(mi),`gastos-${mes}.csv`);
 });
 
-/* ---------- informe PDF ---------- */
+/* ---------- informes PDF ---------- */
 async function fotoParaPdf(path){
   try{
     const url=await fotoUrl(path); if(!url) return null;
@@ -400,34 +458,40 @@ async function fotoParaPdf(path){
     return {data:c.toDataURL('image/jpeg',0.8), w:c.width, h:c.height};
   }catch(_){ return null; }
 }
-const fechaEs = f => f.split('-').reverse().join('/');
-$('btnPdf').addEventListener('click',async()=>{
-  const mi=items.filter(g=>ymOf(g.fecha)===mes).sort((a,b)=>orden(a).localeCompare(orden(b)));
-  if(!mi.length){flash('No hay gastos en este mes para exportar.');return;}
+
+// Aviso de justificantes: el primer toque avisa, el segundo genera igualmente.
+let pdfArmado=null;
+function avisoFotos(clave,lista,btn){
+  const faltan=lista.filter(g=>necesitaFoto(g)&&!g.foto);
+  if(!faltan.length || pdfArmado===clave){ pdfArmado=null; return false; }
+  pdfArmado=clave;
+  const det=faltan.slice(0,4).map(g=>`${fechaEs(g.fecha)} ${TIPOS[g.tipo]} ${eur0(g.importe)} €`).join(' · ');
+  flash(`${faltan.length===1?'Hay 1 gasto':'Hay '+faltan.length+' gastos'} sin foto del ticket: ${det}${faltan.length>4?' …':''}. Añádela tocando el gasto, o pulsa otra vez para generar el PDF igualmente.`, 9000);
+  btn.textContent=`Faltan ${faltan.length} foto${faltan.length>1?'s':''} · pulsa otra vez`;
+  return true;
+}
+
+async function generarPdf({lista,titulo,periodo,archivo,resumen,btn,btnTxt}){
   if(!window.jspdf||!window.jspdf.jsPDF){flash('No se pudo cargar el generador de PDF. Comprueba la conexión y recarga.');return;}
-  const btn=$('btnPdf'); btn.disabled=true; btn.textContent='Generando PDF…';
+  btn.disabled=true; btn.textContent='Generando PDF…';
   try{
     const {jsPDF}=window.jspdf;
     const doc=new jsPDF({unit:'mm',format:'a4'});
     const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight(), M=15;
-    const mt=ymLabel(mes,false), titMes=mt.charAt(0).toUpperCase()+mt.slice(1);
     const hoy=nowParts();
 
-    doc.setFont('helvetica','bold'); doc.setFontSize(16);
-    doc.text('Relación de gastos de trabajo', M, 20);
-    doc.setFont('helvetica','normal'); doc.setFontSize(11);
-    doc.text(titMes, M, 27);
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.text(titulo, M, 20);
+    doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.text(periodo, M, 27);
     doc.setFontSize(9); doc.setTextColor(90);
-    doc.text('Trabajador: '+(TITULAR||user.email||''), M, 34);
+    doc.text('Trabajador: '+(nombreUsuario()||user.email||''), M, 34);
     doc.text('Generado el '+fechaEs(hoy.fecha)+' a las '+hoy.hora, M, 39);
     doc.setTextColor(0);
 
-    const total=sum(mi), pend=sum(mi.filter(g=>g.estado!=='cobrado'));
     doc.autoTable({
       startY:45, margin:{left:M,right:M},
       head:[['Fecha','Hora','Tipo','Concepto','Estado','Euros']],
-      body:mi.map(g=>[fechaEs(g.fecha),g.hora||'',TIPOS[g.tipo],[detalle(g),g.lugar,g.nota].filter(Boolean).join(' · '),g.estado==='cobrado'?'Cobrado':'Pendiente',eur0(g.importe)]),
-      foot:[['','','','','Total',eur0(total)]],
+      body:lista.map(g=>[fechaEs(g.fecha),g.hora||'',TIPOS[g.tipo],[detalle(g),g.lugar,g.nota].filter(Boolean).join(' · ')+(necesitaFoto(g)&&!g.foto?' (sin ticket)':''),g.estado==='cobrado'?'Cobrado':'Pendiente',eur0(g.importe)]),
+      foot:[['','','','','Total',eur0(sum(lista))]],
       styles:{font:'helvetica',fontSize:9,cellPadding:2,textColor:20,lineColor:200,lineWidth:0.1},
       headStyles:{fillColor:[28,31,35],textColor:255,fontStyle:'bold'},
       footStyles:{fillColor:[242,177,52],textColor:20,fontStyle:'bold'},
@@ -437,42 +501,98 @@ $('btnPdf').addEventListener('click',async()=>{
     });
 
     let y=doc.lastAutoTable.finalY+10;
-    if(y>H-50){doc.addPage();y=20;}
-    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('Resumen', M, y); y+=6;
-    doc.setFont('helvetica','normal'); doc.setFontSize(10);
-    const lineas=[...Object.keys(TIPOS).map(t=>[TIPOS[t],sum(mi.filter(g=>g.tipo===t))]).filter(r=>r[1]>0),['Total del mes',total],['Pendiente de cobro',pend]];
-    for(const [k,v] of lineas){
-      const fuerte=k==='Pendiente de cobro'||k==='Total del mes';
-      doc.setFont('helvetica',fuerte?'bold':'normal');
-      doc.text(k, M, y); doc.text(eur0(v)+' EUR', W-M, y, {align:'right'}); y+=6;
+    for(const bloque of resumen){
+      if(y>H-20-bloque.lineas.length*6){doc.addPage();y=20;}
+      doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(bloque.titulo, M, y); y+=6;
+      doc.setFontSize(10);
+      for(const [k,v,fuerte] of bloque.lineas){
+        doc.setFont('helvetica',fuerte?'bold':'normal');
+        doc.text(k, M, y); doc.text(eur0(v)+' EUR', W-M, y, {align:'right'}); y+=6;
+      }
+      y+=4;
     }
 
-    const conFoto=mi.filter(g=>g.foto);
+    const conFoto=lista.filter(g=>g.foto);
     if(conFoto.length){
-      btn.textContent='Añadiendo fotos…';
       const boxH=(H-2*M-20)/2, boxW=W-2*M;
-      let slot=2;
+      let slot=2, i=0;
       for(const g of conFoto){
-        if(slot===2){doc.addPage(); doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text('Justificantes · '+titMes, M, 18); slot=0;}
+        i++; btn.textContent=`Añadiendo fotos ${i}/${conFoto.length}…`;
+        if(slot===2){doc.addPage(); doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text('Justificantes · '+periodo, M, 18); slot=0;}
         const top=26+slot*(boxH+6);
         doc.setFont('helvetica','normal'); doc.setFontSize(9);
         doc.text(`${fechaEs(g.fecha)}${g.hora?' '+g.hora:''} · ${TIPOS[g.tipo]} · ${eur0(g.importe)} EUR${g.lugar?' · '+g.lugar:''}`, M, top);
         const im=await fotoParaPdf(g.foto);
-        if(im){
-          const s=Math.min(boxW/im.w,(boxH-6)/im.h);
-          doc.addImage(im.data,'JPEG',M,top+3,im.w*s,im.h*s);
-        }else{
-          doc.setTextColor(150); doc.text('No se pudo cargar la foto.', M, top+10); doc.setTextColor(0);
-        }
+        if(im){ const s=Math.min(boxW/im.w,(boxH-6)/im.h); doc.addImage(im.data,'JPEG',M,top+3,im.w*s,im.h*s); }
+        else{ doc.setTextColor(150); doc.text('No se pudo cargar la foto.', M, top+10); doc.setTextColor(0); }
         slot++;
       }
     }
 
     const n=doc.getNumberOfPages();
-    for(let i=1;i<=n;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(130);doc.text(`Página ${i} de ${n}`, W-M, H-8, {align:'right'});}
-    doc.save(`gastos-${mes}.pdf`);
+    for(let p=1;p<=n;p++){doc.setPage(p);doc.setFontSize(8);doc.setTextColor(130);doc.text(`Página ${p} de ${n}`, W-M, H-8, {align:'right'});}
+    doc.save(archivo);
   }catch(e){ flash('No se pudo generar el PDF. Vuelve a intentarlo.'); }
-  finally{ btn.disabled=false; btn.textContent='Exportar mes (PDF)'; }
+  finally{ btn.disabled=false; btn.textContent=btnTxt; }
+}
+
+const porTipo = lista => Object.keys(TIPOS).map(t=>[TIPOS[t],sum(lista.filter(g=>g.tipo===t))]).filter(r=>r[1]>0);
+
+$('btnPdf').addEventListener('click',()=>{
+  const btn=$('btnPdf'), txt='PDF del mes';
+  const mi=asc(items.filter(g=>ymOf(g.fecha)===mes));
+  if(!mi.length){flash('No hay gastos en este mes para exportar.');return;}
+  if(avisoFotos('mes:'+mes,mi,btn)) return;
+  const mt=ymLabel(mes,false);
+  generarPdf({lista:mi, titulo:'Relación de gastos de trabajo', periodo:mt.charAt(0).toUpperCase()+mt.slice(1),
+    archivo:`gastos-${mes}.pdf`, btn, btnTxt:txt,
+    resumen:[{titulo:'Resumen', lineas:[...porTipo(mi),['Total del mes',sum(mi),true],['Pendiente de cobro',sum(mi.filter(g=>g.estado!=='cobrado')),true]]}]});
+});
+
+$('btnReclamar').addEventListener('click',()=>{
+  const btn=$('btnReclamar'), txt='Reclamar pendientes (PDF)';
+  const pend=asc(items.filter(g=>g.estado!=='cobrado'));
+  if(!pend.length){flash('No tienes nada pendiente de cobro.');return;}
+  if(avisoFotos('pend',pend,btn)) return;
+  const meses=[...new Set(pend.map(g=>ymOf(g.fecha)))];
+  const lm=ym=>{const s=ymLabel(ym,false);return s.charAt(0).toUpperCase()+s.slice(1);};
+  generarPdf({lista:pend, titulo:'Gastos pendientes de cobro',
+    periodo:`Del ${fechaEs(pend[0].fecha)} al ${fechaEs(pend[pend.length-1].fecha)}`,
+    archivo:`pendientes-${nowParts().fecha}.pdf`, btn, btnTxt:txt,
+    resumen:[
+      {titulo:'Pendiente por mes', lineas:meses.map(ym=>[lm(ym),sum(pend.filter(g=>ymOf(g.fecha)===ym))])},
+      {titulo:'Pendiente por concepto', lineas:[...porTipo(pend),['Total pendiente de cobro',sum(pend),true]]}
+    ]});
+});
+
+/* ---------- copia de seguridad ---------- */
+$('btnCopia').addEventListener('click',async()=>{
+  const btn=$('btnCopia'), txt='Descargar copia de seguridad';
+  if(!items.length){flash('Todavía no hay gastos que copiar.');return;}
+  if(!window.JSZip){flash('No se pudo cargar el compresor. Comprueba la conexión y recarga.');return;}
+  btn.disabled=true;
+  try{
+    const zip=new JSZip(), lista=asc(items), nombres={}, fallos=[];
+    const conFoto=lista.filter(g=>g.foto);
+    let i=0;
+    for(const g of conFoto){
+      i++; btn.textContent=`Copiando fotos ${i}/${conFoto.length}…`;
+      const nombre=`fotos/${g.fecha}_${g.tipo}_${String(g.id).slice(0,8)}.jpg`;
+      try{
+        const url=await fotoUrl(g.foto); if(!url) throw 0;
+        const r=await fetch(url); if(!r.ok) throw 0;
+        zip.file(nombre, await r.blob()); nombres[g.id]=nombre;
+      }catch(_){ fallos.push(g); }
+    }
+    btn.textContent='Preparando archivo…';
+    zip.file('gastos.csv', csvDe(lista,nombres));
+    zip.file('gastos.json', JSON.stringify({exportado:new Date().toISOString(), trabajador:nombreUsuario()||user.email, gastos:lista.map(g=>({...g, archivo_foto:nombres[g.id]||null}))},null,2));
+    zip.file('LEEME.txt', 'Copia de seguridad de Gastos de Trabajo.\r\n\r\ngastos.csv: se abre con Excel (separado por punto y coma).\r\ngastos.json: copia completa de los datos, para poder restaurarlos.\r\nfotos/: justificantes; el nombre de cada foto aparece en la columna "Foto" del CSV.\r\n');
+    const blob=await zip.generateAsync({type:'blob'});
+    descargar(blob,`copia-gastos-${nowParts().fecha}.zip`);
+    flash(fallos.length?`Copia descargada, pero ${fallos.length} foto${fallos.length>1?'s':''} no se pudo copiar. Vuelve a intentarlo con mejor conexión.`:`Copia descargada: ${lista.length} gastos y ${conFoto.length} fotos.`, 7000);
+  }catch(e){ flash('No se pudo crear la copia. Vuelve a intentarlo.'); }
+  finally{ btn.disabled=false; btn.textContent=txt; }
 });
 
 /* ---------- formulario ---------- */
@@ -577,6 +697,7 @@ $('btnDel').addEventListener('click',async()=>{
 });
 
 /* ---------- arranque ---------- */
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 sb.auth.getSession().then(({data})=>{ if(!data.session) showView(false); });
 })();
 </script>
