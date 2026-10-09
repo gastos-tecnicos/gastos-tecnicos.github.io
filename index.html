@@ -10,6 +10,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script>
 /* ====== CONFIGURACIÓN: pega aquí los datos de tu proyecto de Supabase ======
    Supabase > Project Settings > API
@@ -17,6 +19,8 @@
    - anon / public key     -> SUPABASE_ANON_KEY  (la "anon", NUNCA la service_role) */
 const SUPABASE_URL = 'https://luolhazkytgtwknmnjfb.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_ikjAmifY2Naj5m3fDcWoGA_VaApVeJz';
+/* Nombre que sale en el informe PDF (si lo dejas vacío, sale tu correo) */
+const TITULAR = '';
 </script>
 <style>
 /* Layout: una columna tipo app de móvil (máx. 560px): cabecera oscura con lo que te deben, meses, totales y lista por día */
@@ -64,7 +68,7 @@ header.top{background:var(--head);color:var(--head-fg);margin-inline:-16px;paddi
 .cat b{font-size:14px;font-weight:600}
 
 .monthbar{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding-block:12px 6px;flex-wrap:wrap}
-.monthbar h2{margin:0;font-size:15px;font-weight:600;text-transform:capitalize}
+.monthbar h2{margin:0;font-size:15px;font-weight:600}
 .monthbar span{font-size:13px;color:var(--muted)}
 .tools{display:flex;gap:8px;flex-wrap:wrap;padding-block:4px 8px}
 .ghost{min-height:40px;padding:0 12px;border:1px solid var(--field);background:transparent;border-radius:10px;font-size:13px}
@@ -160,7 +164,8 @@ a{color:var(--fg)}
   <div class="cats" id="cats"></div>
   <div class="monthbar"><h2 id="mTitle"></h2><span id="mTotal"></span></div>
   <div class="tools">
-    <button class="ghost" id="btnExport" type="button">Exportar mes (CSV)</button>
+    <button class="ghost" id="btnPdf" type="button">Exportar mes (PDF)</button>
+    <button class="ghost" id="btnExport" type="button">CSV</button>
     <button class="ghost warn" id="btnPayMonth" type="button" hidden>Marcar mes como cobrado</button>
   </div>
   <div class="list" id="list"></div>
@@ -319,7 +324,7 @@ function render(){
   const mi=items.filter(g=>ymOf(g.fecha)===mes);
   $('cats').innerHTML=Object.keys(TIPOS).map(t=>`<div class="cat"><small>${TIPOS[t]}</small><b class="num">${eur0(sum(mi.filter(g=>g.tipo===t)))}</b></div>`).join('');
   const mPend=sum(mi.filter(g=>g.estado!=='cobrado'));
-  $('mTitle').textContent=ymLabel(mes,false);
+  const mt=ymLabel(mes,false); $('mTitle').textContent=mt.charAt(0).toUpperCase()+mt.slice(1);
   $('mTotal').innerHTML=`Total <span class="num">${eur(sum(mi))}</span> · pendiente <span class="num">${eur(mPend)}</span>`;
   $('btnPayMonth').hidden=!(mPend>0);
   if(payArmed && !(mPend>0)) disarmPay();
@@ -381,6 +386,93 @@ $('btnExport').addEventListener('click',()=>{
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`gastos-${mes}.csv`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+});
+
+/* ---------- informe PDF ---------- */
+async function fotoParaPdf(path){
+  try{
+    const url=await fotoUrl(path); if(!url) return null;
+    const blob=await (await fetch(url)).blob();
+    const bmp=await createImageBitmap(blob);
+    const s=Math.min(1,1400/Math.max(bmp.width,bmp.height));
+    const c=document.createElement('canvas'); c.width=Math.round(bmp.width*s); c.height=Math.round(bmp.height*s);
+    const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height); ctx.drawImage(bmp,0,0,c.width,c.height);
+    return {data:c.toDataURL('image/jpeg',0.8), w:c.width, h:c.height};
+  }catch(_){ return null; }
+}
+const fechaEs = f => f.split('-').reverse().join('/');
+$('btnPdf').addEventListener('click',async()=>{
+  const mi=items.filter(g=>ymOf(g.fecha)===mes).sort((a,b)=>orden(a).localeCompare(orden(b)));
+  if(!mi.length){flash('No hay gastos en este mes para exportar.');return;}
+  if(!window.jspdf||!window.jspdf.jsPDF){flash('No se pudo cargar el generador de PDF. Comprueba la conexión y recarga.');return;}
+  const btn=$('btnPdf'); btn.disabled=true; btn.textContent='Generando PDF…';
+  try{
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF({unit:'mm',format:'a4'});
+    const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight(), M=15;
+    const mt=ymLabel(mes,false), titMes=mt.charAt(0).toUpperCase()+mt.slice(1);
+    const hoy=nowParts();
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(16);
+    doc.text('Relación de gastos de trabajo', M, 20);
+    doc.setFont('helvetica','normal'); doc.setFontSize(11);
+    doc.text(titMes, M, 27);
+    doc.setFontSize(9); doc.setTextColor(90);
+    doc.text('Trabajador: '+(TITULAR||user.email||''), M, 34);
+    doc.text('Generado el '+fechaEs(hoy.fecha)+' a las '+hoy.hora, M, 39);
+    doc.setTextColor(0);
+
+    const total=sum(mi), pend=sum(mi.filter(g=>g.estado!=='cobrado'));
+    doc.autoTable({
+      startY:45, margin:{left:M,right:M},
+      head:[['Fecha','Hora','Tipo','Concepto','Estado','Euros']],
+      body:mi.map(g=>[fechaEs(g.fecha),g.hora||'',TIPOS[g.tipo],[detalle(g),g.lugar,g.nota].filter(Boolean).join(' · '),g.estado==='cobrado'?'Cobrado':'Pendiente',eur0(g.importe)]),
+      foot:[['','','','','Total',eur0(total)]],
+      styles:{font:'helvetica',fontSize:9,cellPadding:2,textColor:20,lineColor:200,lineWidth:0.1},
+      headStyles:{fillColor:[28,31,35],textColor:255,fontStyle:'bold'},
+      footStyles:{fillColor:[242,177,52],textColor:20,fontStyle:'bold'},
+      alternateRowStyles:{fillColor:[246,244,239]},
+      columnStyles:{0:{cellWidth:20},1:{cellWidth:13},2:{cellWidth:20},4:{cellWidth:20},5:{cellWidth:24,halign:'right'}},
+      didParseCell:d=>{ if((d.section==='foot'||d.section==='head')&&d.column.index===5) d.cell.styles.halign='right'; }
+    });
+
+    let y=doc.lastAutoTable.finalY+10;
+    if(y>H-50){doc.addPage();y=20;}
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('Resumen', M, y); y+=6;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10);
+    const lineas=[...Object.keys(TIPOS).map(t=>[TIPOS[t],sum(mi.filter(g=>g.tipo===t))]).filter(r=>r[1]>0),['Total del mes',total],['Pendiente de cobro',pend]];
+    for(const [k,v] of lineas){
+      const fuerte=k==='Pendiente de cobro'||k==='Total del mes';
+      doc.setFont('helvetica',fuerte?'bold':'normal');
+      doc.text(k, M, y); doc.text(eur0(v)+' EUR', W-M, y, {align:'right'}); y+=6;
+    }
+
+    const conFoto=mi.filter(g=>g.foto);
+    if(conFoto.length){
+      btn.textContent='Añadiendo fotos…';
+      const boxH=(H-2*M-20)/2, boxW=W-2*M;
+      let slot=2;
+      for(const g of conFoto){
+        if(slot===2){doc.addPage(); doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text('Justificantes · '+titMes, M, 18); slot=0;}
+        const top=26+slot*(boxH+6);
+        doc.setFont('helvetica','normal'); doc.setFontSize(9);
+        doc.text(`${fechaEs(g.fecha)}${g.hora?' '+g.hora:''} · ${TIPOS[g.tipo]} · ${eur0(g.importe)} EUR${g.lugar?' · '+g.lugar:''}`, M, top);
+        const im=await fotoParaPdf(g.foto);
+        if(im){
+          const s=Math.min(boxW/im.w,(boxH-6)/im.h);
+          doc.addImage(im.data,'JPEG',M,top+3,im.w*s,im.h*s);
+        }else{
+          doc.setTextColor(150); doc.text('No se pudo cargar la foto.', M, top+10); doc.setTextColor(0);
+        }
+        slot++;
+      }
+    }
+
+    const n=doc.getNumberOfPages();
+    for(let i=1;i<=n;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(130);doc.text(`Página ${i} de ${n}`, W-M, H-8, {align:'right'});}
+    doc.save(`gastos-${mes}.pdf`);
+  }catch(e){ flash('No se pudo generar el PDF. Vuelve a intentarlo.'); }
+  finally{ btn.disabled=false; btn.textContent='Exportar mes (PDF)'; }
 });
 
 /* ---------- formulario ---------- */
