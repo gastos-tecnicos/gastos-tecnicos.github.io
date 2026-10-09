@@ -97,6 +97,7 @@ form{display:flex;flex-direction:column;gap:14px;padding-top:16px}
 .f label,.lab{font-size:13px;font-weight:500}
 .hint{font-size:12px;color:var(--muted)}
 .two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.two.solo{grid-template-columns:minmax(0,1fr)}
 input[type=text],input[type=email],input[type=password],input[type=date],input[type=time]{height:46px;border:1px solid var(--field);border-radius:10px;padding:0 12px;background:var(--surface);width:100%;min-width:0;font-size:16px}
 .seg{display:grid;gap:6px}
 .seg.c4{grid-template-columns:repeat(4,minmax(0,1fr))} .seg.c2{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -174,9 +175,9 @@ a{color:var(--fg)}
       <h2 id="sTitle">Añadir gasto</h2>
     </div>
     <form id="form" novalidate>
-      <div class="two">
+      <div class="two" id="rowFecha">
         <div class="f"><label for="fFecha">Fecha</label><input type="date" id="fFecha" required></div>
-        <div class="f"><label for="fHora">Hora</label><input type="time" id="fHora" required></div>
+        <div class="f" id="boxHora"><label for="fHora">Hora del ticket</label><input type="time" id="fHora"></div>
       </div>
       <div class="f">
         <span class="lab" id="lTipo">Tipo</span>
@@ -244,6 +245,8 @@ const eur0 = n => (Number(n)||0).toLocaleString('es-ES',{minimumFractionDigits:2
 const eur = n => eur0(n) + ' €';
 const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pad = n => String(n).padStart(2,'0');
+const orden = g => (g.fecha||'')+' '+(g.hora||'')+' '+(g.created_at||'');
+const conHora = t => t==='parking' || t==='zona';
 const sum = arr => Math.round(arr.reduce((s,g)=>s+(Number(g.importe)||0),0)*100)/100;
 function nowParts(){const d=new Date();return {fecha:`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,hora:`${pad(d.getHours())}:${pad(d.getMinutes())}`};}
 const ymOf = f => String(f||'').slice(0,7);
@@ -265,9 +268,9 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let user=null, items=[], mes=ymOf(nowParts().fecha), loaded=false;
 
 async function cargar(){
-  const {data,error} = await sb.from('gastos').select('*').order('fecha',{ascending:false}).order('hora',{ascending:false});
+  const {data,error} = await sb.from('gastos').select('*').order('fecha',{ascending:false}).order('created_at',{ascending:false});
   if(error){ flash('No se pudieron cargar los gastos. Comprueba la conexión.'); return; }
-  items = data.map(g=>({...g, hora:String(g.hora).slice(0,5), importe:Number(g.importe)}));
+  items = data.map(g=>({...g, hora:g.hora?String(g.hora).slice(0,5):'', importe:Number(g.importe)}));
   loaded=true; render();
 }
 
@@ -326,14 +329,14 @@ function render(){
     $('list').innerHTML=`<div class="empty"><b>No hay gastos en ${esc(ymLabel(mes,false))}</b><span>Pulsa «Añadir gasto» al pagar una dieta, un parking o la zona azul, o cuando vendas una fibra. Para un mes pasado, cambia la fecha en el formulario.</span></div>`;
     return;
   }
-  mi.sort((a,b)=>(b.fecha+b.hora).localeCompare(a.fecha+a.hora));
+  mi.sort((a,b)=>orden(b).localeCompare(orden(a)));
   let html='',last='';
   for(const g of mi){
     if(g.fecha!==last){html+=`<div class="day">${esc(dayLabel(g.fecha))}</div>`;last=g.fecha;}
     const sub=[detalle(g),g.lugar,g.nota,g.foto?'con foto':''].filter(Boolean).map(esc).join(' · ');
     const cob=g.estado==='cobrado';
-    html+=`<div class="row" data-id="${esc(g.id)}" role="button" tabindex="0" aria-label="Editar ${esc(TIPOS[g.tipo])} del ${esc(g.fecha)} a las ${esc(g.hora)}">
-      <div class="l"><b><span class="num">${esc(g.hora)}</span> · ${esc(TIPOS[g.tipo]||g.tipo)}</b>${sub?`<span>${sub}</span>`:''}</div>
+    html+=`<div class="row" data-id="${esc(g.id)}" role="button" tabindex="0" aria-label="Editar ${esc(TIPOS[g.tipo])} del ${esc(g.fecha)}${g.hora?' a las '+esc(g.hora):''}">
+      <div class="l"><b>${g.hora?`<span class="num">${esc(g.hora)}</span> · `:''}${esc(TIPOS[g.tipo]||g.tipo)}</b>${sub?`<span>${sub}</span>`:''}</div>
       <div class="r"><b class="num">${eur0(g.importe)}</b><button type="button" class="pill ${cob?'c':'p'}" data-toggle="${esc(g.id)}" aria-label="Cambiar estado, ahora ${cob?'cobrado':'pendiente'}">${cob?'Cobrado':'Pendiente'}</button></div>
     </div>`;
   }
@@ -369,11 +372,11 @@ $('btnPayMonth').addEventListener('click',async()=>{
 });
 
 $('btnExport').addEventListener('click',()=>{
-  const mi=items.filter(g=>ymOf(g.fecha)===mes).sort((a,b)=>(a.fecha+a.hora).localeCompare(b.fecha+b.hora));
+  const mi=items.filter(g=>ymOf(g.fecha)===mes).sort((a,b)=>orden(a).localeCompare(orden(b)));
   if(!mi.length){flash('No hay gastos en este mes para exportar.');return;}
   const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
   const lines=[['Fecha','Hora','Tipo','Detalle','Lugar','Nota','Importe','Estado'].join(';')];
-  for(const g of mi) lines.push([g.fecha.split('-').reverse().join('/'),g.hora,TIPOS[g.tipo],detalle(g),g.lugar,g.nota,eur0(g.importe),g.estado==='cobrado'?'Cobrado':'Pendiente'].map(q).join(';'));
+  for(const g of mi) lines.push([g.fecha.split('-').reverse().join('/'),g.hora||'',TIPOS[g.tipo],detalle(g),g.lugar,g.nota,eur0(g.importe),g.estado==='cobrado'?'Cobrado':'Pendiente'].map(q).join(';'));
   lines.push(['','','','','','Total',eur0(sum(mi)),''].map(q).join(';'));
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`gastos-${mes}.csv`;
@@ -388,7 +391,7 @@ function openSheet(g){
      :{id:null,fecha:n.fecha,hora:n.hora,tipo:'dieta',importe:null,fibras:1,moviles:0,lugar:'',nota:'',foto:null,estado:'pendiente'};
   fotoFile=null; delArmed=false;
   $('sTitle').textContent=g?'Editar gasto':'Añadir gasto';
-  $('fFecha').value=F.fecha; $('fHora').value=F.hora;
+  $('fFecha').value=F.fecha; $('fHora').value=F.hora||n.hora;
   $('fImporte').value=F.tipo!=='comision'&&F.importe!=null?eur0(F.importe):'';
   $('fLugar').value=F.lugar; $('fNota').value=F.nota; $('fFoto').value='';
   $('btnDel').hidden=!g; $('btnDel').textContent='Eliminar gasto';
@@ -406,6 +409,7 @@ async function syncForm(){
   for(const b of $('segTipo').children) b.setAttribute('aria-pressed',String(b.dataset.v===F.tipo));
   for(const b of $('segEstado').children) b.setAttribute('aria-pressed',String(b.dataset.v===F.estado));
   const comi=F.tipo==='comision';
+  $('boxHora').hidden=!conHora(F.tipo); $('rowFecha').classList.toggle('solo',!conHora(F.tipo));
   $('boxComi').hidden=!comi; $('boxImporte').hidden=comi; $('quick').hidden=F.tipo!=='dieta';
   $('lImporte').textContent=F.tipo==='dieta'?'Importe de la factura (€)':'Importe del ticket (€)';
   $('lLugar').textContent=comi?'Dónde (opcional)':'Dónde';
@@ -445,8 +449,9 @@ $('form').addEventListener('submit',async e=>{
   e.preventDefault(); if(saving) return;
   const err=$('fErr'); err.hidden=true;
   const fail=m=>{err.textContent=m;err.hidden=false;};
-  const fecha=$('fFecha').value, hora=$('fHora').value, importe=importeForm();
-  if(!fecha||!hora) return fail('Pon la fecha y la hora.');
+  const fecha=$('fFecha').value, hora=conHora(F.tipo)?$('fHora').value:null, importe=importeForm();
+  if(!fecha) return fail('Pon la fecha.');
+  if(conHora(F.tipo)&&!hora) return fail('Pon la hora del ticket.');
   if(!(importe>0)) return fail(F.tipo==='comision'?'Añade al menos una fibra o una línea.':'Escribe el importe, por ejemplo 16,00.');
   saving=true; $('btnSave').disabled=true; $('btnSave').textContent='Guardando…';
   const fotoAnterior = F.id ? (items.find(x=>x.id===F.id)||{}).foto : null;
