@@ -220,9 +220,9 @@ a{color:var(--fg)}
   <header class="top">
     <div class="toprow"><span class="eyebrow">Te deben</span><span style="display:flex;gap:6px"><button class="out" id="btnAjustes" type="button">Ajustes</button><button class="out" id="btnOut" type="button">Salir</button></span></div>
     <span class="big num" id="totPend">0,00 €</span>
-    <div class="split">
-      <span><i>Sin presentar</i> <b class="num" id="totSin">0,00 €</b></span>
-      <span><i>Presentado, esperando</i> <b class="num" id="totPres">0,00 €</b></span>
+    <div class="split" id="split">
+      <span><i>Por entregar</i> <b class="num" id="totSin">0,00 €</b></span>
+      <span><i>Entregado, esperando</i> <b class="num" id="totPres">0,00 €</b></span>
     </div>
     <span class="sub" id="totSub"></span>
     <div class="hbtns">
@@ -237,14 +237,15 @@ a{color:var(--fg)}
   <div class="cats" id="cats"></div>
   <div class="monthbar"><h2 id="mTitle"></h2><span id="mTotal"></span></div>
   <div class="tools">
-    <button class="ghost warn" id="btnPresentar" type="button" hidden>Marcar como presentados</button>
+    <button class="ghost warn" id="btnPresentar" type="button" hidden>Marcar como entregados</button>
     <button class="ghost" id="btnPdf" type="button">PDF del mes</button>
     <button class="ghost" id="btnExport" type="button">CSV</button>
   </div>
   <div class="seg c4 filtro" id="segFiltro" role="group" aria-label="Mostrar">
     <button type="button" data-f="todos">Todos</button>
-    <button type="button" data-f="pendiente">Sin presentar</button>
-    <button type="button" data-f="presentado">Presentados</button>
+    <button type="button" data-f="pendiente">Por entregar</button>
+    <button type="button" data-f="presentado">Entregados</button>
+    <button type="button" data-f="debe" hidden>Te deben</button>
     <button type="button" data-f="cobrado">Cobrados</button>
   </div>
   <div class="list" id="list"></div>
@@ -297,12 +298,12 @@ a{color:var(--fg)}
       <div class="f">
         <span class="lab" id="lEstado">Estado</span>
         <div class="seg c3 state" id="segEstado" role="group" aria-labelledby="lEstado">
-          <button type="button" data-v="pendiente">Sin presentar</button>
-          <button type="button" data-v="presentado">Presentado</button>
+          <button type="button" data-v="pendiente">Por entregar</button>
+          <button type="button" data-v="presentado">Entregado</button>
           <button type="button" data-v="cobrado">Cobrado</button>
         </div>
       </div>
-      <div class="f" id="boxPres" hidden><label for="fPres">Presentado el</label><input type="date" id="fPres"></div>
+      <div class="f" id="boxPres" hidden><label for="fPres">Entregado el</label><input type="date" id="fPres"></div>
       <div class="foot">
         <div class="total"><span>Importe</span><b class="num" id="fTotal">0,00 €</b></div>
         <p class="err" id="fErr" hidden></p>
@@ -354,7 +355,7 @@ a{color:var(--fg)}
         <span class="lab" id="lAlc">Qué reclamar</span>
         <div class="seg c3" id="segAlc" role="group" aria-labelledby="lAlc">
           <button type="button" data-a="todo">Todo lo pendiente</button>
-          <button type="button" data-a="pres">Solo lo presentado</button>
+          <button type="button" data-a="pres">Solo lo entregado</button>
           <button type="button" data-a="mes">Mes elegido</button>
         </div>
       </div>
@@ -385,6 +386,7 @@ a{color:var(--fg)}
       <div class="f"><label for="aNombre">Tu nombre completo (sale en los informes)</label><input type="text" id="aNombre" autocomplete="name"></div>
       <div class="f"><label for="aEmpresa">Empresa (sale en el mensaje de reclamación)</label><input type="text" id="aEmpresa" autocomplete="organization"></div>
       <div class="f"><label for="aDias">Avisarme cuando un importe lleve más de estos días esperando</label><input type="number" id="aDias" min="7" max="365" inputmode="numeric"></div>
+      <label class="tog"><input type="checkbox" id="aSimple"> En mi empresa no hace falta entregar los gastos (solo «te deben» y «cobrado»)</label>
       <button class="save" type="submit" id="btnPerfil">Guardar datos</button>
     </form>
     <div class="stack">
@@ -428,7 +430,6 @@ const DEFAULTS=[
   {nombre:'Parking',modo:'importe',unidades:[],rapidos:[],pide_hora:true,pide_foto:true},
   {nombre:'Zona azul',modo:'importe',unidades:[],rapidos:[],pide_hora:true,pide_foto:true}
 ];
-const ESTADOS={pendiente:'Sin presentar',presentado:'Presentado',cobrado:'Cobrado'};
 const $=id=>document.getElementById(id);
 const eur0=n=>(Number(n)||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2});
 const eur=n=>eur0(n)+' €';
@@ -463,6 +464,8 @@ const meta=()=>user?.user_metadata||{};
 const nombreUsuario=()=>(meta().nombre||'').trim();
 const empresa=()=>(meta().empresa||'').trim();
 const diasAviso=()=>{const n=parseInt(meta().dias_aviso,10);return n>=7&&n<=365?n:30;};
+const simple=()=>!!meta().sin_entrega;
+const estTxt=e=>simple()?(e==='cobrado'?'Cobrado':'Pendiente'):({pendiente:'Por entregar',presentado:'Entregado',cobrado:'Cobrado'}[e]||e);
 const label=g=>g.concepto_nombre||LEGACY[g.tipo]||g.tipo||'Gasto';
 const conceptoDe=g=>conceptos.find(c=>c.id===g.concepto_id)||conceptos.find(c=>c.nombre===label(g));
 const pideFoto=g=>{const c=conceptoDe(g);return c?c.pide_foto:g.tipo!=='comision';};
@@ -542,7 +545,7 @@ function avisos(){
   if(dups.length)out.push({txt:`${dups.length} posible${dups.length>1?'s':''} duplicado${dups.length>1?'s':''} (mismo día, concepto e importe)`,act:'Revisar',fn:()=>{const g=dups[0][0];mes=ymOf(g.fecha);render();openSheet(g);}});
   const actual=ymOf(nowParts().fecha);
   const mesesSin=[...new Set(items.filter(g=>g.estado==='pendiente'&&ymOf(g.fecha)<actual).map(g=>ymOf(g.fecha)))].sort();
-  if(mesesSin.length)out.push({txt:`Meses sin presentar: ${mesesSin.map(m=>ymLabel(m,true)).join(', ')}`,act:'Ver',fn:()=>{mes=mesesSin[0];filtro='pendiente';render();}});
+  if(mesesSin.length&&!simple())out.push({txt:`Meses sin entregar: ${mesesSin.map(m=>ymLabel(m,true)).join(', ')}`,act:'Ver',fn:()=>{mes=mesesSin[0];filtro='pendiente';render();}});
   const lim=diasAviso();
   const viejos=items.filter(g=>noCobrado(g)&&diasDesde(esperaDesde(g))>lim);
   if(viejos.length)out.push({txt:`${eur(sum(viejos))} llevan más de ${lim} días esperando`,act:'Reclamar',fn:()=>abrirRecl('todo')});
@@ -568,13 +571,14 @@ function render(){
   let sub='Cobrado en '+yr+': '+eur(sum(items.filter(g=>g.estado==='cobrado'&&g.fecha.startsWith(yr))));
   if(nc.length){const o=asc(nc)[0];const d=diasDesde(esperaDesde(o));sub=`Lo más antiguo: ${eur(o.importe)} de ${label(o)} del ${fechaEs(o.fecha)}, ${d>0?d+' día'+(d===1?'':'s')+' esperando':'de hoy'} · `+sub;}
   $('totSub').textContent=sub;
+  $('split').hidden=simple();
   renderAvisos();renderCobros();
 
   const yms=new Set(items.map(g=>ymOf(g.fecha)));yms.add(ymOf(nowParts().fecha));yms.add(mes);
   $('months').innerHTML=[...yms].filter(Boolean).sort().reverse().map(ym=>{
     const its=items.filter(g=>ymOf(g.fecha)===ym);
     const sin=sum(its.filter(g=>g.estado==='pendiente')),pres=sum(its.filter(g=>g.estado==='presentado'));
-    const st=!its.length?'<span>Sin gastos</span>':sin>0?`<span class="t-pend">Sin presentar ${eur(sin)}</span>`:pres>0?`<span class="t-pres">Presentado ${eur(pres)}</span>`:'<span class="t-ok">Cobrado</span>';
+    const st=!its.length?'<span>Sin gastos</span>':simple()?(sin+pres>0?`<span class="t-pend">Te deben ${eur(round2(sin+pres))}</span>`:'<span class="t-ok">Cobrado</span>'):sin>0?`<span class="t-pend">Por entregar ${eur(sin)}</span>`:pres>0?`<span class="t-pres">Entregado ${eur(pres)}</span>`:'<span class="t-ok">Cobrado</span>';
     return `<button type="button" class="mchip" data-ym="${ym}" aria-pressed="${ym===mes}"><b>${esc(ymLabel(ym,true))}</b>${st}</button>`;
   }).join('');
 
@@ -584,15 +588,18 @@ function render(){
   $('mTitle').textContent=cap(ymLabel(mes,false));
   $('mTotal').innerHTML=`Total <span class="num">${eur(sum(mi))}</span> · te deben <span class="num">${eur(sum(mi.filter(noCobrado)))}</span>`;
   const sinMes=mi.filter(g=>g.estado==='pendiente');
-  $('btnPresentar').hidden=!sinMes.length;
-  if(!presArmed)$('btnPresentar').textContent=`Marcar ${sinMes.length} como presentado${sinMes.length>1?'s':''}`;
-  for(const b of $('segFiltro').children)b.setAttribute('aria-pressed',String(b.dataset.f===filtro));
+  $('btnPresentar').hidden=!sinMes.length||simple();
+  if(!presArmed)$('btnPresentar').textContent=`Marcar ${sinMes.length} como entregado${sinMes.length>1?'s':''}`;
+  if(simple()&&(filtro==='pendiente'||filtro==='presentado'))filtro='debe';
+  if(!simple()&&filtro==='debe')filtro='todos';
+  $('segFiltro').className='seg filtro '+(simple()?'c3':'c4');
+  for(const b of $('segFiltro').children){b.hidden=simple()?(b.dataset.f==='pendiente'||b.dataset.f==='presentado'):b.dataset.f==='debe';b.setAttribute('aria-pressed',String(b.dataset.f===filtro));}
 
   if(!loaded){$('list').innerHTML='<div class="empty"><b>Cargando tus gastos…</b></div>';return;}
   if(faltaV2){$('list').innerHTML='<div class="empty"><b>Falta actualizar la base de datos</b><span>En Supabase, abre SQL Editor, pega el contenido de v2.sql y pulsa Run. Después recarga esta página.</span></div>';return;}
   if(!mi.length){$('list').innerHTML=`<div class="empty"><b>No hay gastos en ${esc(ymLabel(mes,false))}</b><span>Pulsa «Añadir gasto» cuando pagues una dieta, un parking o la zona azul, hagas una guardia o vendas algo. Para un mes pasado, cambia la fecha en el formulario.</span></div>`;return;}
-  const vis=mi.filter(g=>filtro==='todos'||g.estado===filtro);
-  if(!vis.length){$('list').innerHTML=`<div class="empty"><b>Nada ${filtro==='cobrado'?'cobrado':filtro==='presentado'?'presentado':'sin presentar'} en ${esc(ymLabel(mes,false))}</b><span>Pulsa «Todos» para ver el resto de gastos del mes.</span></div>`;return;}
+  const vis=mi.filter(g=>filtro==='todos'||(filtro==='debe'?noCobrado(g):g.estado===filtro));
+  if(!vis.length){$('list').innerHTML=`<div class="empty"><b>Nada ${{cobrado:'cobrado',presentado:'entregado',pendiente:'por entregar',debe:'pendiente de cobro'}[filtro]} en ${esc(ymLabel(mes,false))}</b><span>Pulsa «Todos» para ver el resto de gastos del mes.</span></div>`;return;}
   vis.sort((a,b)=>orden(b).localeCompare(orden(a)));
   const dupIds=new Set(grupoDup().flat().map(g=>g.id));
   let html='',last='';
@@ -601,11 +608,11 @@ function render(){
     const partes=[detalle(g),g.lugar,g.nota,g.foto?'con foto':''].filter(Boolean).map(esc);
     if(pideFoto(g)&&!g.foto)partes.push('<span class="warnTxt">sin foto</span>');
     if(dupIds.has(g.id))partes.push('<span class="warnTxt">¿duplicado?</span>');
-    if(g.estado==='presentado'&&g.presentado_el){const d=diasDesde(g.presentado_el);partes.push(`presentado ${hace(d)}`);}
-    const cls=g.estado==='cobrado'?'c':g.estado==='presentado'?'s':'p';
+    if(!simple()&&g.estado==='presentado'&&g.presentado_el){const d=diasDesde(g.presentado_el);partes.push(`entregado ${hace(d)}`);}
+    const cls=g.estado==='cobrado'?'c':simple()?'p':g.estado==='presentado'?'s':'p';
     html+=`<div class="row" data-id="${esc(g.id)}" role="button" tabindex="0" aria-label="Editar ${esc(label(g))} del ${esc(g.fecha)}">
       <div class="l"><b>${g.hora?`<span class="num">${esc(g.hora)}</span> · `:''}${esc(label(g))}</b>${partes.length?`<span>${partes.join(' · ')}</span>`:''}</div>
-      <div class="r"><b class="num">${eur0(g.importe)}</b><button type="button" class="pill ${cls}" data-toggle="${esc(g.id)}" aria-label="Estado: ${ESTADOS[g.estado]||g.estado}. ${g.estado==='cobrado'?'Abrir gasto':'Cambiar'}">${ESTADOS[g.estado]||g.estado}</button></div>
+      <div class="r"><b class="num">${eur0(g.importe)}</b><button type="button" class="pill ${cls}" data-toggle="${esc(g.id)}" aria-label="Estado: ${estTxt(g.estado)}. ${g.estado==='cobrado'?'Abrir gasto':'Cambiar'}">${estTxt(g.estado)}</button></div>
     </div>`;
   }
   $('list').innerHTML=html;
@@ -619,7 +626,7 @@ $('list').addEventListener('click',async e=>{
   if(t){
     e.stopPropagation();
     const g=items.find(x=>x.id===t.dataset.toggle);if(!g)return;
-    if(g.estado==='cobrado'){openSheet(g);return;}
+    if(g.estado==='cobrado'||simple()){openSheet(g);return;}
     const cambio=g.estado==='pendiente'?{estado:'presentado',presentado_el:nowParts().fecha}:{estado:'pendiente',presentado_el:null};
     const {error}=await sb.from('gastos').update(cambio).eq('id',g.id);
     if(error)flash('No se pudo cambiar el estado. Vuelve a intentarlo.');else{Object.assign(g,cambio);render();}
@@ -632,20 +639,20 @@ $('list').addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.ta
 $('btnPresentar').addEventListener('click',async()=>{
   const ids=items.filter(g=>ymOf(g.fecha)===mes&&g.estado==='pendiente').map(g=>g.id);
   if(!ids.length)return;
-  if(!presArmed){presArmed=true;$('btnPresentar').textContent=`Pulsa otra vez: presentados hoy (${ids.length})`;return;}
+  if(!presArmed){presArmed=true;$('btnPresentar').textContent=`Pulsa otra vez: entregados hoy (${ids.length})`;return;}
   presArmed=false;
   const {error}=await sb.from('gastos').update({estado:'presentado',presentado_el:nowParts().fecha}).in('id',ids);
-  if(error)flash('No se pudo marcar como presentado. Vuelve a intentarlo.');
-  else{flash(`${ids.length} gasto${ids.length>1?'s':''} marcado${ids.length>1?'s':''} como presentado${ids.length>1?'s':''} hoy.`);cargar();}
+  if(error)flash('No se pudo marcar como entregado. Vuelve a intentarlo.');
+  else{flash(`${ids.length} gasto${ids.length>1?'s':''} marcado${ids.length>1?'s':''} como entregado${ids.length>1?'s':''} hoy.`);cargar();}
 });
 
 /* ---------- exportación ---------- */
 function descargar(blob,nombre){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=nombre;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);}
 function csvDe(lista,fotoNombre){
   const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
-  const cab=['Fecha','Hora','Concepto','Detalle','Lugar','Nota','Importe','Estado','Presentado el'];if(fotoNombre)cab.push('Foto');
+  const cab=['Fecha','Hora','Concepto','Detalle','Lugar','Nota','Importe','Estado','Entregado el'];if(fotoNombre)cab.push('Foto');
   const lines=[cab.join(';')];
-  for(const g of lista){const r=[fechaEs(g.fecha),g.hora||'',label(g),detalle(g),g.lugar,g.nota,eur0(g.importe),ESTADOS[g.estado]||g.estado,g.presentado_el?fechaEs(g.presentado_el):''];if(fotoNombre)r.push(fotoNombre[g.id]||'');lines.push(r.map(q).join(';'));}
+  for(const g of lista){const r=[fechaEs(g.fecha),g.hora||'',label(g),detalle(g),g.lugar,g.nota,eur0(g.importe),estTxt(g.estado),g.presentado_el?fechaEs(g.presentado_el):''];if(fotoNombre)r.push(fotoNombre[g.id]||'');lines.push(r.map(q).join(';'));}
   lines.push(['','','','','','Total',eur0(sum(lista)),'',''].map(q).join(';'));
   return new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
 }
@@ -683,7 +690,7 @@ async function generarPdf({lista,titulo,periodo,archivo,resumen,btn,btnTxt}){
     doc.text('Generado el '+fechaEs(hoy.fecha)+' a las '+hoy.hora,M,39);doc.setTextColor(0);
     doc.autoTable({startY:45,margin:{left:M,right:M},
       head:[['Fecha','Hora','Concepto','Detalle','Estado','Euros']],
-      body:lista.map(g=>[fechaEs(g.fecha),g.hora||'',label(g),[detalle(g),g.lugar,g.nota].filter(Boolean).join(' · ')+(pideFoto(g)&&!g.foto?' (sin ticket)':''),(ESTADOS[g.estado]||g.estado)+(g.estado==='presentado'&&g.presentado_el?' '+fechaEs(g.presentado_el):''),eur0(g.importe)]),
+      body:lista.map(g=>[fechaEs(g.fecha),g.hora||'',label(g),[detalle(g),g.lugar,g.nota].filter(Boolean).join(' · ')+(pideFoto(g)&&!g.foto?' (sin ticket)':''),(estTxt(g.estado))+(!simple()&&g.estado==='presentado'&&g.presentado_el?' '+fechaEs(g.presentado_el):''),eur0(g.importe)]),
       foot:[['','','','','Total',eur0(sum(lista))]],
       styles:{font:'helvetica',fontSize:9,cellPadding:2,textColor:20,lineColor:200,lineWidth:0.1},
       headStyles:{fillColor:[28,31,35],textColor:255,fontStyle:'bold'},footStyles:{fillColor:[242,177,52],textColor:20,fontStyle:'bold'},
@@ -740,7 +747,9 @@ function textoRecl(lista){
 }
 function actualizarWa(){$('lnkWa').href='https://wa.me/?text='+encodeURIComponent($('rTexto').value);}
 function renderRecl(){
-  for(const b of $('segAlc').children)b.setAttribute('aria-pressed',String(b.dataset.a===alcance));
+  if(simple()&&alcance==='pres')alcance='todo';
+  $('segAlc').className='seg '+(simple()?'c2':'c3');
+  for(const b of $('segAlc').children){b.hidden=simple()&&b.dataset.a==='pres';b.setAttribute('aria-pressed',String(b.dataset.a===alcance));}
   $('segAlc').children[2].textContent='Solo '+ymLabel(mes,true);
   const l=listaRecl();
   if(!l.length){$('rSum').innerHTML='<div>No hay nada pendiente en esta selección.</div>';$('rTexto').value='';}
@@ -821,7 +830,7 @@ function abrirCobro(){
   const pend=pendientesAsc();if(!pend.length){flash('No tienes nada pendiente de cobro.');return;}
   C={sel:new Set()};
   $('cFecha').value=nowParts().fecha;$('cImporte').value='';$('cQuien').value='';$('cNota').value='';$('cErr').hidden=true;
-  $('cLista').innerHTML=pend.map(g=>`<label class="chk"><input type="checkbox" data-g="${esc(g.id)}"><span class="t"><b>${esc(fechaEs(g.fecha))} · ${esc(label(g))}</b><span>${esc([ESTADOS[g.estado],detalle(g),g.lugar,g.nota].filter(Boolean).join(' · '))}</span></span><span class="m">${eur0(g.importe)}</span></label>`).join('');
+  $('cLista').innerHTML=pend.map(g=>`<label class="chk"><input type="checkbox" data-g="${esc(g.id)}"><span class="t"><b>${esc(fechaEs(g.fecha))} · ${esc(label(g))}</b><span>${esc([estTxt(g.estado),detalle(g),g.lugar,g.nota].filter(Boolean).join(' · '))}</span></span><span class="m">${eur0(g.importe)}</span></label>`).join('');
   syncCobro();abrir('sheetCobro');$('cImporte').focus();
 }
 function syncCobro(){
@@ -862,10 +871,10 @@ $('listCobros').addEventListener('click',async e=>{
   const id=u.dataset.cundo;
   if(undoArmed!==id){undoArmed=id;renderCobros();return;}
   undoArmed=null;
-  const r1=await sb.from('gastos').update({estado:'presentado',cobro_id:null}).eq('cobro_id',id);
+  const r1=await sb.from('gastos').update({estado:simple()?'pendiente':'presentado',cobro_id:null}).eq('cobro_id',id);
   if(r1.error){flash('No se pudo deshacer el cobro. Vuelve a intentarlo.');renderCobros();return;}
   const r2=await sb.from('cobros').delete().eq('id',id);
-  flash(r2.error?'Los gastos vuelven a estar pendientes de cobro, pero el cobro no se pudo borrar. Vuelve a intentarlo.':'Cobro deshecho: sus gastos vuelven a estar presentados y pendientes de cobro.');
+  flash(r2.error?'Los gastos vuelven a estar pendientes de cobro, pero el cobro no se pudo borrar. Vuelve a intentarlo.':'Cobro deshecho: sus gastos vuelven a estar pendientes de cobro.');
   cargar();
 });
 async function justificante(c,btn){
@@ -983,8 +992,13 @@ async function syncForm(){
   $('quick').innerHTML=rap.map(v=>`<button type="button" data-q="${v}">${eur0(v).replace(/,00$/,'')} €</button>`).join('');
   $('lImporte').textContent=(c?c.pide_foto:true)?'Importe del ticket o factura (€)':'Importe (€)';
   $('boxFoto').hidden=!(c?c.pide_foto:true)&&!F.foto&&!fotoFile;
-  for(const b of $('segEstado').children)b.setAttribute('aria-pressed',String(b.dataset.v===F.estado));
-  $('boxPres').hidden=F.estado==='pendiente';
+  for(const b of $('segEstado').children){
+    b.hidden=simple()&&b.dataset.v==='presentado';
+    if(b.dataset.v==='pendiente')b.textContent=simple()?'Pendiente de cobro':'Por entregar';
+    b.setAttribute('aria-pressed',String(simple()&&b.dataset.v==='pendiente'?F.estado!=='cobrado':b.dataset.v===F.estado));
+  }
+  $('segEstado').className='seg state '+(simple()?'c2':'c3');
+  $('boxPres').hidden=simple()||F.estado==='pendiente';
   $('fotoTxt').textContent=(fotoFile||F.foto)?'Cambiar foto':'Adjuntar foto';
   $('btnQuitarFoto').hidden=!(fotoFile||F.foto);
   $('fTotal').textContent=eur(importeForm());
@@ -1033,7 +1047,7 @@ $('form').addEventListener('submit',async e=>{
   if(F.pideHora&&!hora)return fail('Pon la hora del ticket.');
   if(!F.cnombre)return fail('Elige un concepto.');
   if(!(importe>0))return fail(F.units?'Añade al menos una unidad.':'Escribe el importe, por ejemplo 16,00.');
-  if(F.estado!=='pendiente'&&!$('fPres').value)return fail('Pon la fecha en que lo presentaste.');
+  if(!simple()&&F.estado!=='pendiente'&&!$('fPres').value)return fail('Pon la fecha en que lo entregaste.');
   saving=true;$('btnSave').disabled=true;$('btnSave').textContent='Guardando…';
   const nuevo=!F.id,id=F.id||uuid();
   const anterior=F.id?items.find(x=>x.id===F.id):null,fotoAnterior=anterior?.foto||null;
@@ -1042,7 +1056,7 @@ $('form').addEventListener('submit',async e=>{
   const row={fecha,hora,tipo:legacyTipo||slug(F.cnombre),importe,
     concepto_id:c?.id||null,concepto_nombre:F.cnombre,unidades:F.units?F.units.filter(u=>u.cantidad>0):null,
     lugar:$('fLugar').value.trim().slice(0,120),nota:$('fNota').value.trim().slice(0,200),
-    estado:F.estado,presentado_el:F.estado==='pendiente'?null:$('fPres').value};
+    estado:F.estado,presentado_el:F.estado==='pendiente'?null:($('fPres').value||null)};
   if(F.estado!=='cobrado'&&!sinCobros)row.cobro_id=null;
   try{
     if(fotoFile){blob=await shrink(fotoFile);foto=`${user.id}/${nuevo?id:uuid()}.jpg`;}
@@ -1080,7 +1094,7 @@ function renderCpts(){
 }
 function abrirAj(){
   if(faltaV2){flash('Falta actualizar la base de datos: ejecuta v2.sql en Supabase y recarga.',9000);return;}
-  $('aNombre').value=nombreUsuario();$('aEmpresa').value=empresa();$('aDias').value=diasAviso();
+  $('aNombre').value=nombreUsuario();$('aEmpresa').value=empresa();$('aDias').value=diasAviso();$('aSimple').checked=simple();
   E=null;$('cptEditor').hidden=true;$('btnNewCpt').hidden=false;renderCpts();abrir('sheetAj');
 }
 $('btnAjustes').addEventListener('click',abrirAj);
@@ -1088,7 +1102,7 @@ $('btnBackAj').addEventListener('click',()=>{cerrar('sheetAj');render();});
 $('formPerfil').addEventListener('submit',async e=>{
   e.preventDefault();
   const dias=parseInt($('aDias').value,10);
-  const data={nombre:$('aNombre').value.trim().slice(0,80),empresa:$('aEmpresa').value.trim().slice(0,80),dias_aviso:dias>=7&&dias<=365?dias:30};
+  const data={nombre:$('aNombre').value.trim().slice(0,80),empresa:$('aEmpresa').value.trim().slice(0,80),dias_aviso:dias>=7&&dias<=365?dias:30,sin_entrega:$('aSimple').checked};
   const r=await sb.auth.updateUser({data});
   if(r.error){flash('No se pudieron guardar tus datos. Vuelve a intentarlo.');return;}
   user=r.data.user;$('aDias').value=diasAviso();flash('Datos guardados.');render();
