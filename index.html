@@ -58,6 +58,17 @@ header.top{background:var(--head);color:var(--head-fg);margin-inline:-16px;paddi
 .split span{font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--head-line);color:var(--head-fg)}
 .split i{font-style:normal;color:var(--head-muted)}
 .sub{font-size:13px;color:var(--head-muted)}
+.comtog{align-self:flex-start;min-height:36px;padding:0 12px;border:1px solid var(--head-line);border-radius:999px;background:transparent;color:var(--head-fg);font-size:12px;display:inline-flex;align-items:center;gap:8px}
+.comtog i{font-style:normal;width:30px;height:18px;border-radius:999px;background:var(--head-line);position:relative;flex:0 0 auto}
+.comtog i::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--head-muted)}
+.comtog[aria-pressed="true"] i{background:var(--accent)}
+.comtog[aria-pressed="true"] i::after{left:14px;background:var(--on-accent)}
+.cat.off{opacity:.45}
+.cat{cursor:pointer;border:1px solid transparent;text-align:left;font:inherit;color:inherit}
+.frow{background:var(--surface);border-radius:10px;padding:6px 8px 6px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.frow label{display:flex;align-items:center;gap:10px;min-height:44px;font-size:15px;flex:1;min-width:0}
+.frow input{width:22px;height:22px;accent-color:var(--accent);flex:0 0 auto}
+.frow button{min-height:38px;padding:0 10px;border:1px solid var(--field);background:transparent;border-radius:8px;font-size:12px}
 .hbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .cobrar{min-height:44px;padding:0 14px;border:1px solid var(--accent);border-radius:10px;background:transparent;color:var(--accent);font-size:14px;font-weight:600}
 .cobrar.alt{border-color:var(--head-line);color:var(--head-fg)}
@@ -225,6 +236,7 @@ a{color:var(--fg)}
       <span><i>Entregado, esperando</i> <b class="num" id="totPres">0,00 €</b></span>
     </div>
     <span class="sub" id="totSub"></span>
+    <button class="comtog" id="btnCom" type="button" aria-pressed="true" aria-haspopup="dialog"><i aria-hidden="true"></i><span id="comTxt">Contando todos los conceptos</span></button>
     <div class="hbtns">
       <button class="cobrar" id="btnCobro" type="button">Me han pagado en mano</button>
       <button class="cobrar alt" id="btnRecl" type="button">Preparar reclamación</button>
@@ -375,6 +387,21 @@ a{color:var(--fg)}
   </div>
 </div>
 
+<!-- ===== Qué cuenta en el total ===== -->
+<div class="sheet" id="sheetFiltro" hidden role="dialog" aria-modal="true" aria-labelledby="fTitle">
+  <div class="wrap">
+    <div class="shead">
+      <button class="back" id="btnBackFiltro" type="button" aria-label="Volver">‹</button>
+      <h2 id="fTitle">Qué cuenta en el total</h2>
+    </div>
+    <div class="stack">
+      <span class="hint">Lo que desmarques deja de contar en el total, los meses, los avisos, la reclamación, el cobro y los PDF. Los gastos siguen apuntados.</span>
+      <div class="clist" id="fLista"></div>
+      <button type="button" class="save" id="btnFiltroTodo">Contar todo</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== Ajustes ===== -->
 <div class="sheet" id="sheetAj" hidden role="dialog" aria-modal="true" aria-labelledby="aTitle">
   <div class="wrap">
@@ -465,6 +492,17 @@ const nombreUsuario=()=>(meta().nombre||'').trim();
 const empresa=()=>(meta().empresa||'').trim();
 const diasAviso=()=>{const n=parseInt(meta().dias_aviso,10);return n>=7&&n<=365?n:30;};
 const simple=()=>!!meta().sin_entrega;
+const nombresConceptos=()=>[...new Set([...conceptos.filter(c=>c.activo).map(c=>c.nombre),...items.map(label)])];
+const excluidos=()=>{const m=meta();if(Array.isArray(m.excluidos))return m.excluidos;return m.sin_comisiones?nombresConceptos().filter(n=>/comisi/i.test(n)):[];};
+const cuenta=g=>!excluidos().includes(label(g));
+function filtroTxt(){
+  const ex=excluidos(),todos=nombresConceptos(),inc=todos.filter(n=>!ex.includes(n));
+  if(!ex.length)return '';
+  if(inc.length===1)return 'solo '+inc[0];
+  if(!inc.length)return 'ningún concepto';
+  return ex.length<=2?'sin '+ex.join(' ni '):inc.length+' de '+todos.length+' conceptos';
+}
+const contables=()=>items.filter(cuenta);
 const estTxt=e=>simple()?(e==='cobrado'?'Cobrado':'Pendiente'):({pendiente:'Por entregar',presentado:'Entregado',cobrado:'Cobrado'}[e]||e);
 const label=g=>g.concepto_nombre||LEGACY[g.tipo]||g.tipo||'Gasto';
 const conceptoDe=g=>conceptos.find(c=>c.id===g.concepto_id)||conceptos.find(c=>c.nombre===label(g));
@@ -539,15 +577,15 @@ function grupoDup(){
 const esDup=g=>!g.no_duplicado&&grupoDup().some(a=>a.some(x=>x.id===g.id));
 function avisos(){
   const out=[];
-  const sinT=asc(items.filter(g=>noCobrado(g)&&pideFoto(g)&&!g.foto));
+  const sinT=asc(contables().filter(g=>noCobrado(g)&&pideFoto(g)&&!g.foto));
   if(sinT.length)out.push({txt:`${sinT.length} gasto${sinT.length>1?'s':''} sin foto del ticket`,act:'Ver',fn:()=>{mes=ymOf(sinT[0].fecha);render();openSheet(sinT[0]);}});
   const dups=grupoDup();
   if(dups.length)out.push({txt:`${dups.length} posible${dups.length>1?'s':''} duplicado${dups.length>1?'s':''} (mismo día, concepto e importe)`,act:'Revisar',fn:()=>{const g=dups[0][0];mes=ymOf(g.fecha);render();openSheet(g);}});
   const actual=ymOf(nowParts().fecha);
-  const mesesSin=[...new Set(items.filter(g=>g.estado==='pendiente'&&ymOf(g.fecha)<actual).map(g=>ymOf(g.fecha)))].sort();
+  const mesesSin=[...new Set(contables().filter(g=>g.estado==='pendiente'&&ymOf(g.fecha)<actual).map(g=>ymOf(g.fecha)))].sort();
   if(mesesSin.length&&!simple())out.push({txt:`Meses sin entregar: ${mesesSin.map(m=>ymLabel(m,true)).join(', ')}`,act:'Ver',fn:()=>{mes=mesesSin[0];filtro='pendiente';render();}});
   const lim=diasAviso();
-  const viejos=items.filter(g=>noCobrado(g)&&diasDesde(esperaDesde(g))>lim);
+  const viejos=contables().filter(g=>noCobrado(g)&&diasDesde(esperaDesde(g))>lim);
   if(viejos.length)out.push({txt:`${eur(sum(viejos))} llevan más de ${lim} días esperando`,act:'Reclamar',fn:()=>abrirRecl('todo')});
   for(const c of cobros){const d=round2(c.importe-c.marcado);
     if(d<=-0.01)out.push({txt:`En el cobro del ${fechaEs(c.fecha)} te dieron ${eur(-d)} menos`,act:'Ver',fn:()=>$('secCobros').scrollIntoView({behavior:'smooth'})});}
@@ -564,19 +602,21 @@ $('alertList').addEventListener('click',e=>{const b=e.target.closest('[data-al]'
 /* ---------- render ---------- */
 function render(){
   const yr=String(new Date().getFullYear());
-  const nc=items.filter(noCobrado);
+  const nc=contables().filter(noCobrado);
   $('totPend').textContent=eur(sum(nc));
   $('totSin').textContent=eur(sum(nc.filter(g=>g.estado==='pendiente')));
   $('totPres').textContent=eur(sum(nc.filter(g=>g.estado==='presentado')));
-  let sub='Cobrado en '+yr+': '+eur(sum(items.filter(g=>g.estado==='cobrado'&&g.fecha.startsWith(yr))));
+  let sub='Cobrado en '+yr+': '+eur(sum(contables().filter(g=>g.estado==='cobrado'&&g.fecha.startsWith(yr))));
   if(nc.length){const o=asc(nc)[0];const d=diasDesde(esperaDesde(o));sub=`Lo más antiguo: ${eur(o.importe)} de ${label(o)} del ${fechaEs(o.fecha)}, ${d>0?d+' día'+(d===1?'':'s')+' esperando':'de hoy'} · `+sub;}
   $('totSub').textContent=sub;
   $('split').hidden=simple();
+  $('btnCom').setAttribute('aria-pressed',String(!excluidos().length));
+  $('comTxt').textContent=filtroTxt()?'Contando '+filtroTxt()+' · cambiar':'Contando todos los conceptos';
   renderAvisos();renderCobros();
 
   const yms=new Set(items.map(g=>ymOf(g.fecha)));yms.add(ymOf(nowParts().fecha));yms.add(mes);
   $('months').innerHTML=[...yms].filter(Boolean).sort().reverse().map(ym=>{
-    const its=items.filter(g=>ymOf(g.fecha)===ym);
+    const its=contables().filter(g=>ymOf(g.fecha)===ym);
     const sin=sum(its.filter(g=>g.estado==='pendiente')),pres=sum(its.filter(g=>g.estado==='presentado'));
     const st=!its.length?'<span>Sin gastos</span>':simple()?(sin+pres>0?`<span class="t-pend">Te deben ${eur(round2(sin+pres))}</span>`:'<span class="t-ok">Cobrado</span>'):sin>0?`<span class="t-pend">Por entregar ${eur(sin)}</span>`:pres>0?`<span class="t-pres">Entregado ${eur(pres)}</span>`:'<span class="t-ok">Cobrado</span>';
     return `<button type="button" class="mchip" data-ym="${ym}" aria-pressed="${ym===mes}"><b>${esc(ymLabel(ym,true))}</b>${st}</button>`;
@@ -584,9 +624,9 @@ function render(){
 
   const mi=items.filter(g=>ymOf(g.fecha)===mes);
   const labs=[...new Set([...conceptos.filter(c=>c.activo).map(c=>c.nombre),...mi.map(label)])];
-  $('cats').innerHTML=labs.map(l=>`<div class="cat"><small>${esc(l)}</small><b class="num">${eur0(sum(mi.filter(g=>label(g)===l)))}</b></div>`).join('');
+  $('cats').innerHTML=labs.map(l=>`<button type="button" class="cat${excluidos().includes(l)?' off':''}" data-cat="${esc(l)}" aria-pressed="${!excluidos().includes(l)}" aria-label="${esc(l)}: ${excluidos().includes(l)?'fuera del total, toca para contarlo':'cuenta en el total, toca para quitarlo'}"><small>${esc(l)}${excluidos().includes(l)?' (fuera)':''}</small><b class="num">${eur0(sum(mi.filter(g=>label(g)===l)))}</b></button>`).join('');
   $('mTitle').textContent=cap(ymLabel(mes,false));
-  $('mTotal').innerHTML=`Total <span class="num">${eur(sum(mi))}</span> · te deben <span class="num">${eur(sum(mi.filter(noCobrado)))}</span>`;
+  $('mTotal').innerHTML=`Total <span class="num">${eur(sum(mi.filter(cuenta)))}</span> · te deben <span class="num">${eur(sum(mi.filter(g=>cuenta(g)&&noCobrado(g))))}</span>${filtroTxt()?' · '+filtroTxt():''}`;
   const sinMes=mi.filter(g=>g.estado==='pendiente');
   $('btnPresentar').hidden=!sinMes.length||simple();
   if(!presArmed)$('btnPresentar').textContent=`Marcar ${sinMes.length} como entregado${sinMes.length>1?'s':''}`;
@@ -608,6 +648,7 @@ function render(){
     const partes=[detalle(g),g.lugar,g.nota,g.foto?'con foto':''].filter(Boolean).map(esc);
     if(pideFoto(g)&&!g.foto)partes.push('<span class="warnTxt">sin foto</span>');
     if(dupIds.has(g.id))partes.push('<span class="warnTxt">¿duplicado?</span>');
+    if(!cuenta(g))partes.push('fuera del total');
     if(!simple()&&g.estado==='presentado'&&g.presentado_el){const d=diasDesde(g.presentado_el);partes.push(`entregado ${hace(d)}`);}
     const cls=g.estado==='cobrado'?'c':simple()?'p':g.estado==='presentado'?'s':'p';
     html+=`<div class="row" data-id="${esc(g.id)}" role="button" tabindex="0" aria-label="Editar ${esc(label(g))} del ${esc(g.fecha)}">
@@ -656,7 +697,7 @@ function csvDe(lista,fotoNombre){
   lines.push(['','','','','','Total',eur0(sum(lista)),'',''].map(q).join(';'));
   return new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
 }
-$('btnExport').addEventListener('click',()=>{const mi=asc(items.filter(g=>ymOf(g.fecha)===mes));if(!mi.length){flash('No hay gastos en este mes para exportar.');return;}descargar(csvDe(mi),`gastos-${mes}.csv`);});
+$('btnExport').addEventListener('click',()=>{const mi=asc(contables().filter(g=>ymOf(g.fecha)===mes));if(!mi.length){flash('No hay gastos en este mes para exportar.');return;}descargar(csvDe(mi),`gastos-${mes}.csv`);});
 
 async function fotoParaPdf(path){
   try{const url=await fotoUrl(path);if(!url)return null;
@@ -684,7 +725,7 @@ async function generarPdf({lista,titulo,periodo,archivo,resumen,btn,btnTxt}){
     const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});
     const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=15,hoy=nowParts();
     doc.setFont('helvetica','bold');doc.setFontSize(16);doc.text(titulo,M,20);
-    doc.setFont('helvetica','normal');doc.setFontSize(11);doc.text(periodo,M,27);
+    doc.setFont('helvetica','normal');doc.setFontSize(11);doc.text(periodo+(filtroTxt()?' · '+filtroTxt():''),M,27);
     doc.setFontSize(9);doc.setTextColor(90);
     doc.text('Trabajador: '+(nombreUsuario()||user.email||'')+(empresa()?' · Empresa: '+empresa():''),M,34);
     doc.text('Generado el '+fechaEs(hoy.fecha)+' a las '+hoy.hora,M,39);doc.setTextColor(0);
@@ -725,7 +766,7 @@ async function generarPdf({lista,titulo,periodo,archivo,resumen,btn,btnTxt}){
   finally{btn.disabled=false;btn.textContent=btnTxt;}
 }
 $('btnPdf').addEventListener('click',()=>{
-  const btn=$('btnPdf'),mi=asc(items.filter(g=>ymOf(g.fecha)===mes));
+  const btn=$('btnPdf'),mi=asc(contables().filter(g=>ymOf(g.fecha)===mes));
   if(!mi.length){flash('No hay gastos en este mes para exportar.');return;}
   if(avisoFotos('mes:'+mes,mi,btn))return;
   generarPdf({lista:mi,titulo:'Relación de gastos de trabajo',periodo:cap(ymLabel(mes,false)),archivo:`gastos-${mes}.pdf`,btn,btnTxt:'PDF del mes',
@@ -734,9 +775,9 @@ $('btnPdf').addEventListener('click',()=>{
 
 /* ---------- preparar reclamación ---------- */
 function listaRecl(){
-  if(alcance==='pres')return asc(items.filter(g=>g.estado==='presentado'));
-  if(alcance==='mes')return asc(items.filter(g=>ymOf(g.fecha)===mes&&noCobrado(g)));
-  return asc(items.filter(noCobrado));
+  if(alcance==='pres')return asc(contables().filter(g=>g.estado==='presentado'));
+  if(alcance==='mes')return asc(contables().filter(g=>ymOf(g.fecha)===mes&&noCobrado(g)));
+  return asc(contables().filter(noCobrado));
 }
 function textoRecl(lista){
   if(!lista.length)return '';
@@ -760,7 +801,7 @@ function renderRecl(){
   actualizarWa();
 }
 function abrirRecl(a){
-  if(!items.some(noCobrado)){flash('No tienes nada pendiente de cobro.');return;}
+  if(!contables().some(noCobrado)){flash('No tienes nada pendiente de cobro.');return;}
   alcance=a||'todo';resetPdfBtns();renderRecl();abrir('sheetRecl');
 }
 $('btnRecl').addEventListener('click',()=>abrirRecl('todo'));
@@ -813,7 +854,7 @@ $('btnCopia').addEventListener('click',async()=>{
 
 /* ---------- cobros en mano ---------- */
 let C=null,savingC=false,undoArmed=null;
-const pendientesAsc=()=>asc(items.filter(noCobrado));
+const pendientesAsc=()=>asc(contables().filter(noCobrado));
 function renderCobros(){
   const sec=$('secCobros');
   if(sinCobros||!cobros.length){sec.hidden=true;return;}
@@ -1010,7 +1051,7 @@ async function syncForm(){
 $('btnAdd').addEventListener('click',()=>openSheet(null));
 $('btnBack').addEventListener('click',closeSheet);
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;
-  if(!$('sheet').hidden)closeSheet();else if(!$('sheetCobro').hidden){cerrar('sheetCobro');C=null;}else if(!$('sheetRecl').hidden)cerrar('sheetRecl');else if(!$('sheetAj').hidden){cerrar('sheetAj');render();}});
+  if(!$('sheet').hidden)closeSheet();else if(!$('sheetCobro').hidden){cerrar('sheetCobro');C=null;}else if(!$('sheetRecl').hidden)cerrar('sheetRecl');else if(!$('sheetAj').hidden){cerrar('sheetAj');render();}else if(!$('sheetFiltro').hidden)cerrar('sheetFiltro');});
 $('segTipo').addEventListener('click',e=>{
   const b=e.target.closest('[data-c]');if(!b||b.dataset.c===F.cid)return;
   const c=conceptos.find(x=>x.id===b.dataset.c);
@@ -1159,6 +1200,23 @@ $('btnSaveCpt').addEventListener('click',async()=>{
   }else conceptos.push(r.data);
   E=null;$('cptEditor').hidden=true;$('btnNewCpt').hidden=false;renderCpts();flash('Concepto guardado.');
 });
+
+/* ---------- qué conceptos cuentan en el total ---------- */
+async function guardarExcluidos(ex){
+  user={...user,user_metadata:{...meta(),excluidos:ex,sin_comisiones:false}};render();renderFiltro();
+  const r=await sb.auth.updateUser({data:{excluidos:ex,sin_comisiones:false}});
+  if(r.error)flash('No se pudo guardar el cambio en tu cuenta; en este móvil se mantiene hasta que recargues.');else user=r.data.user;
+}
+function renderFiltro(){
+  const ex=excluidos();
+  $('fLista').innerHTML=nombresConceptos().map((n,i)=>`<div class="frow"><label for="fx${i}"><input type="checkbox" id="fx${i}" data-fn="${esc(n)}" ${ex.includes(n)?'':'checked'}>${esc(n)}</label><button type="button" data-solo="${esc(n)}">Solo este</button></div>`).join('');
+}
+$('btnCom').addEventListener('click',()=>{renderFiltro();abrir('sheetFiltro');});
+$('btnBackFiltro').addEventListener('click',()=>cerrar('sheetFiltro'));
+$('fLista').addEventListener('change',e=>{const c=e.target.closest('[data-fn]');if(!c)return;const n=c.dataset.fn,ex=excluidos().filter(x=>x!==n);if(!c.checked)ex.push(n);guardarExcluidos(ex);});
+$('fLista').addEventListener('click',e=>{const b=e.target.closest('[data-solo]');if(!b)return;const n=b.dataset.solo;guardarExcluidos(nombresConceptos().filter(x=>x!==n));cerrar('sheetFiltro');flash('Contando solo '+n+'. Toca el interruptor de arriba para volver a contarlo todo.',6000);});
+$('btnFiltroTodo').addEventListener('click',()=>{guardarExcluidos([]);cerrar('sheetFiltro');});
+$('cats').addEventListener('click',e=>{const b=e.target.closest('[data-cat]');if(!b)return;const n=b.dataset.cat,ex=excluidos();guardarExcluidos(ex.includes(n)?ex.filter(x=>x!==n):[...ex,n]);});
 
 /* ---------- arranque ---------- */
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
