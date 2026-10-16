@@ -86,6 +86,17 @@ header.top{background:var(--head);color:var(--head-fg);margin-inline:-16px;paddi
 .mchip{flex:0 0 auto;min-height:48px;padding:6px 14px;border:1px solid var(--field);background:var(--surface);border-radius:10px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left}
 .mchip[aria-pressed="true"]{border:2px solid var(--fg)}
 .mchip.off{opacity:.5;border-style:dashed}
+.fbar{margin-top:12px;background:var(--surface);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.fbar .fh{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.fbar .fh b{font-size:13px}
+.fbar .fh button{min-height:34px;padding:0 10px;border:1px solid var(--field);background:transparent;border-radius:8px;font-size:12px}
+.fbar .fl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.pills{display:flex;gap:6px;flex-wrap:wrap}
+.pills::-webkit-scrollbar{display:none}
+.pf{flex:0 0 auto;min-height:38px;padding:0 12px;border:1px solid var(--field);border-radius:999px;background:transparent;color:var(--muted);font-size:13px;display:inline-flex;align-items:center;gap:6px;text-decoration:line-through;text-transform:none}
+.pf::before{content:'';width:8px;height:8px;border-radius:50%;border:1.5px solid currentColor}
+.pf[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600;text-decoration:none}
+.pf[aria-pressed="true"]::before{background:currentColor}
 .mchip b{font-size:13px;font-weight:600;text-transform:capitalize}
 .mchip span{font-size:11px}
 .t-pend{color:var(--pend)} .t-pres{color:var(--pres)} .t-ok{color:var(--ok)}
@@ -244,6 +255,13 @@ a{color:var(--fg)}
     </div>
   </header>
   <div id="notice" class="notice" hidden></div>
+  <section class="fbar" id="fbar" aria-labelledby="fbarT">
+    <div class="fh"><b id="fbarT">Qué cuenta en el total</b><button type="button" id="btnTodoBar" hidden>Contar todo</button></div>
+    <span class="fl">Conceptos</span>
+    <div class="pills" id="pCon" role="group" aria-label="Conceptos que cuentan"></div>
+    <span class="fl">Meses</span>
+    <div class="pills" id="pMes" role="group" aria-label="Meses que cuentan"></div>
+  </section>
   <div class="queue" id="queue" hidden><span id="queueTxt"></span><button type="button" id="btnQueue">Enviar ahora</button></div>
   <section class="alerts" id="alerts" hidden aria-labelledby="alertsT"><h2 id="alertsT">Revisa esto</h2><div id="alertList" style="display:flex;flex-direction:column;gap:8px"></div></section>
   <nav class="months" id="months" aria-label="Meses"></nav>
@@ -626,7 +644,11 @@ function render(){
   $('totSub').textContent=sub;
   $('split').hidden=simple();
   $('btnCom').setAttribute('aria-pressed',String(!filtroTxt()));
-  $('comTxt').textContent=filtroTxt()?'Contando '+filtroTxt()+' · cambiar':'Contando todos los conceptos';
+  $('comTxt').textContent=filtroTxt()?'Contando '+filtroTxt()+' · quitar filtro':'Contando todo';
+  $('btnCom').hidden=!filtroTxt();$('btnTodoBar').hidden=!filtroTxt();
+  const exC=excluidos(),exM=mesesFuera();
+  $('pCon').innerHTML=nombresConceptos().map(n=>`<button type="button" class="pf" data-pc="${esc(n)}" aria-pressed="${!exC.includes(n)}">${esc(n)}</button>`).join('');
+  $('pMes').innerHTML=mesesConGastos().map(m=>`<button type="button" class="pf" data-pm="${m}" aria-pressed="${!exM.includes(m)}">${esc(ymLabel(m,true))}</button>`).join('')||'<span class="hint">Aún no hay meses con gastos.</span>';
   renderAvisos();renderCobros();
 
   const yms=new Set(items.map(g=>ymOf(g.fecha)));yms.add(ymOf(nowParts().fecha));yms.add(mes);
@@ -1232,7 +1254,11 @@ function renderFiltro(){
   const ex=excluidos();
   $('fLista').innerHTML=nombresConceptos().map((n,i)=>`<div class="frow"><label for="fx${i}"><input type="checkbox" id="fx${i}" data-fn="${esc(n)}" ${ex.includes(n)?'':'checked'}>${esc(n)}</label><button type="button" data-solo="${esc(n)}">Solo este</button></div>`).join('');
 }
-$('btnCom').addEventListener('click',()=>{renderFiltro();abrir('sheetFiltro');});
+const contarTodo=()=>{guardarFiltro({excluidos:[],sin_comisiones:false,meses_fuera:[]});flash('Vuelves a contar todos los conceptos y meses.');};
+$('btnCom').addEventListener('click',contarTodo);
+$('btnTodoBar').addEventListener('click',contarTodo);
+$('pCon').addEventListener('click',e=>{const b=e.target.closest('[data-pc]');if(!b)return;const n=b.dataset.pc,ex=excluidos();guardarExcluidos(ex.includes(n)?ex.filter(x=>x!==n):[...ex,n]);});
+$('pMes').addEventListener('click',e=>{const b=e.target.closest('[data-pm]');if(!b)return;const m=b.dataset.pm,mf=mesesFuera();guardarMeses(mf.includes(m)?mf.filter(x=>x!==m):[...mf,m]);});
 $('btnBackFiltro').addEventListener('click',()=>cerrar('sheetFiltro'));
 $('fLista').addEventListener('change',e=>{const c=e.target.closest('[data-fn]');if(!c)return;const n=c.dataset.fn,ex=excluidos().filter(x=>x!==n);if(!c.checked)ex.push(n);guardarExcluidos(ex);});
 $('fLista').addEventListener('click',e=>{const b=e.target.closest('[data-solo]');if(!b)return;const n=b.dataset.solo;guardarExcluidos(nombresConceptos().filter(x=>x!==n));cerrar('sheetFiltro');flash('Contando solo '+n+'. Toca el interruptor de arriba para volver a contarlo todo.',6000);});
