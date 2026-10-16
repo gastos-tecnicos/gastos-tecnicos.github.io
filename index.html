@@ -85,6 +85,7 @@ header.top{background:var(--head);color:var(--head-fg);margin-inline:-16px;paddi
 .months::-webkit-scrollbar{display:none}
 .mchip{flex:0 0 auto;min-height:48px;padding:6px 14px;border:1px solid var(--field);background:var(--surface);border-radius:10px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left}
 .mchip[aria-pressed="true"]{border:2px solid var(--fg)}
+.mchip.off{opacity:.5;border-style:dashed}
 .mchip b{font-size:13px;font-weight:600;text-transform:capitalize}
 .mchip span{font-size:11px}
 .t-pend{color:var(--pend)} .t-pres{color:var(--pres)} .t-ok{color:var(--ok)}
@@ -396,7 +397,11 @@ a{color:var(--fg)}
     </div>
     <div class="stack">
       <span class="hint">Lo que desmarques deja de contar en el total, los meses, los avisos, la reclamación, el cobro y los PDF. Los gastos siguen apuntados.</span>
+      <h2 class="secTitle">Conceptos</h2>
       <div class="clist" id="fLista"></div>
+      <h2 class="secTitle" style="margin-top:6px">Meses</h2>
+      <span class="hint">Por ejemplo, si te piden agosto y septiembre, deja marcados solo esos dos.</span>
+      <div class="clist" id="fMeses"></div>
       <button type="button" class="save" id="btnFiltroTodo">Contar todo</button>
     </div>
   </div>
@@ -494,14 +499,24 @@ const diasAviso=()=>{const n=parseInt(meta().dias_aviso,10);return n>=7&&n<=365?
 const simple=()=>!!meta().sin_entrega;
 const nombresConceptos=()=>[...new Set([...conceptos.filter(c=>c.activo).map(c=>c.nombre),...items.map(label)])];
 const excluidos=()=>{const m=meta();if(Array.isArray(m.excluidos))return m.excluidos;return m.sin_comisiones?nombresConceptos().filter(n=>/comisi/i.test(n)):[];};
-const cuenta=g=>!excluidos().includes(label(g));
-function filtroTxt(){
+const mesesFuera=()=>Array.isArray(meta().meses_fuera)?meta().meses_fuera:[];
+const mesesConGastos=()=>[...new Set(items.map(g=>ymOf(g.fecha)))].filter(Boolean).sort().reverse();
+const cuenta=g=>!excluidos().includes(label(g))&&!mesesFuera().includes(ymOf(g.fecha));
+function filtroConceptosTxt(){
   const ex=excluidos(),todos=nombresConceptos(),inc=todos.filter(n=>!ex.includes(n));
   if(!ex.length)return '';
   if(inc.length===1)return 'solo '+inc[0];
   if(!inc.length)return 'ningún concepto';
   return ex.length<=2?'sin '+ex.join(' ni '):inc.length+' de '+todos.length+' conceptos';
 }
+function filtroMesesTxt(){
+  const fuera=mesesFuera(),todos=mesesConGastos(),inc=todos.filter(m=>!fuera.includes(m));
+  if(!todos.some(m=>fuera.includes(m)))return '';
+  if(!inc.length)return 'ningún mes';
+  const lab=l=>[...l].sort().map(m=>ymLabel(m,true)).join(', ').replace(/, ([^,]*)$/,' y $1');
+  return inc.length<=3?lab(inc):'sin '+lab(todos.filter(m=>fuera.includes(m)));
+}
+const filtroTxt=()=>[filtroConceptosTxt(),filtroMesesTxt()].filter(Boolean).join(' · ');
 const contables=()=>items.filter(cuenta);
 const estTxt=e=>simple()?(e==='cobrado'?'Cobrado':'Pendiente'):({pendiente:'Por entregar',presentado:'Entregado',cobrado:'Cobrado'}[e]||e);
 const label=g=>g.concepto_nombre||LEGACY[g.tipo]||g.tipo||'Gasto';
@@ -610,7 +625,7 @@ function render(){
   if(nc.length){const o=asc(nc)[0];const d=diasDesde(esperaDesde(o));sub=`Lo más antiguo: ${eur(o.importe)} de ${label(o)} del ${fechaEs(o.fecha)}, ${d>0?d+' día'+(d===1?'':'s')+' esperando':'de hoy'} · `+sub;}
   $('totSub').textContent=sub;
   $('split').hidden=simple();
-  $('btnCom').setAttribute('aria-pressed',String(!excluidos().length));
+  $('btnCom').setAttribute('aria-pressed',String(!filtroTxt()));
   $('comTxt').textContent=filtroTxt()?'Contando '+filtroTxt()+' · cambiar':'Contando todos los conceptos';
   renderAvisos();renderCobros();
 
@@ -619,12 +634,14 @@ function render(){
     const its=contables().filter(g=>ymOf(g.fecha)===ym);
     const sin=sum(its.filter(g=>g.estado==='pendiente')),pres=sum(its.filter(g=>g.estado==='presentado'));
     const st=!its.length?'<span>Sin gastos</span>':simple()?(sin+pres>0?`<span class="t-pend">Te deben ${eur(round2(sin+pres))}</span>`:'<span class="t-ok">Cobrado</span>'):sin>0?`<span class="t-pend">Por entregar ${eur(sin)}</span>`:pres>0?`<span class="t-pres">Entregado ${eur(pres)}</span>`:'<span class="t-ok">Cobrado</span>';
-    return `<button type="button" class="mchip" data-ym="${ym}" aria-pressed="${ym===mes}"><b>${esc(ymLabel(ym,true))}</b>${st}</button>`;
+    const off=mesesFuera().includes(ym);
+    return `<button type="button" class="mchip${off?' off':''}" data-ym="${ym}" aria-pressed="${ym===mes}"><b>${esc(ymLabel(ym,true))}</b>${off?'<span>Fuera del total</span>':st}</button>`;
   }).join('');
 
   const mi=items.filter(g=>ymOf(g.fecha)===mes);
   const labs=[...new Set([...conceptos.filter(c=>c.activo).map(c=>c.nombre),...mi.map(label)])];
-  $('cats').innerHTML=labs.map(l=>`<button type="button" class="cat${excluidos().includes(l)?' off':''}" data-cat="${esc(l)}" aria-pressed="${!excluidos().includes(l)}" aria-label="${esc(l)}: ${excluidos().includes(l)?'fuera del total, toca para contarlo':'cuenta en el total, toca para quitarlo'}"><small>${esc(l)}${excluidos().includes(l)?' (fuera)':''}</small><b class="num">${eur0(sum(mi.filter(g=>label(g)===l)))}</b></button>`).join('');
+  const mesFuera=mesesFuera().includes(mes);
+  $('cats').innerHTML=labs.map(l=>`<button type="button" class="cat${excluidos().includes(l)||mesFuera?' off':''}" data-cat="${esc(l)}" aria-pressed="${!excluidos().includes(l)}" aria-label="${esc(l)}: ${excluidos().includes(l)?'fuera del total, toca para contarlo':'cuenta en el total, toca para quitarlo'}"><small>${esc(l)}${excluidos().includes(l)?' (fuera)':''}</small><b class="num">${eur0(sum(mi.filter(g=>label(g)===l)))}</b></button>`).join('');
   $('mTitle').textContent=cap(ymLabel(mes,false));
   $('mTotal').innerHTML=`Total <span class="num">${eur(sum(mi.filter(cuenta)))}</span> · te deben <span class="num">${eur(sum(mi.filter(g=>cuenta(g)&&noCobrado(g))))}</span>${filtroTxt()?' · '+filtroTxt():''}`;
   const sinMes=mi.filter(g=>g.estado==='pendiente');
@@ -767,7 +784,7 @@ async function generarPdf({lista,titulo,periodo,archivo,resumen,btn,btnTxt}){
 }
 $('btnPdf').addEventListener('click',()=>{
   const btn=$('btnPdf'),mi=asc(contables().filter(g=>ymOf(g.fecha)===mes));
-  if(!mi.length){flash('No hay gastos en este mes para exportar.');return;}
+  if(!mi.length){flash(mesesFuera().includes(mes)?'Este mes está fuera del total. Vuelve a marcarlo en «Contando…» de arriba para sacar su PDF.':'No hay gastos en este mes para exportar.',7000);return;}
   if(avisoFotos('mes:'+mes,mi,btn))return;
   generarPdf({lista:mi,titulo:'Relación de gastos de trabajo',periodo:cap(ymLabel(mes,false)),archivo:`gastos-${mes}.pdf`,btn,btnTxt:'PDF del mes',
     resumen:[{titulo:'Resumen',lineas:[...porConcepto(mi),['Total del mes',sum(mi),true],['Pendiente de cobro',sum(mi.filter(noCobrado)),true]]}]});
@@ -1202,12 +1219,16 @@ $('btnSaveCpt').addEventListener('click',async()=>{
 });
 
 /* ---------- qué conceptos cuentan en el total ---------- */
-async function guardarExcluidos(ex){
-  user={...user,user_metadata:{...meta(),excluidos:ex,sin_comisiones:false}};render();renderFiltro();
-  const r=await sb.auth.updateUser({data:{excluidos:ex,sin_comisiones:false}});
+async function guardarFiltro(cambio){
+  user={...user,user_metadata:{...meta(),...cambio}};render();renderFiltro();
+  const r=await sb.auth.updateUser({data:cambio});
   if(r.error)flash('No se pudo guardar el cambio en tu cuenta; en este móvil se mantiene hasta que recargues.');else user=r.data.user;
 }
+const guardarExcluidos=ex=>guardarFiltro({excluidos:ex,sin_comisiones:false});
+const guardarMeses=m=>guardarFiltro({meses_fuera:m});
 function renderFiltro(){
+  const mf=mesesFuera();
+  $('fMeses').innerHTML=mesesConGastos().map((m,i)=>`<div class="frow"><label for="fm${i}"><input type="checkbox" id="fm${i}" data-fm="${m}" ${mf.includes(m)?'':'checked'}>${esc(cap(ymLabel(m,false)))}</label><button type="button" data-solom="${m}">Solo este</button></div>`).join('')||'<span class="hint">Todavía no hay meses con gastos.</span>';
   const ex=excluidos();
   $('fLista').innerHTML=nombresConceptos().map((n,i)=>`<div class="frow"><label for="fx${i}"><input type="checkbox" id="fx${i}" data-fn="${esc(n)}" ${ex.includes(n)?'':'checked'}>${esc(n)}</label><button type="button" data-solo="${esc(n)}">Solo este</button></div>`).join('');
 }
@@ -1215,7 +1236,9 @@ $('btnCom').addEventListener('click',()=>{renderFiltro();abrir('sheetFiltro');})
 $('btnBackFiltro').addEventListener('click',()=>cerrar('sheetFiltro'));
 $('fLista').addEventListener('change',e=>{const c=e.target.closest('[data-fn]');if(!c)return;const n=c.dataset.fn,ex=excluidos().filter(x=>x!==n);if(!c.checked)ex.push(n);guardarExcluidos(ex);});
 $('fLista').addEventListener('click',e=>{const b=e.target.closest('[data-solo]');if(!b)return;const n=b.dataset.solo;guardarExcluidos(nombresConceptos().filter(x=>x!==n));cerrar('sheetFiltro');flash('Contando solo '+n+'. Toca el interruptor de arriba para volver a contarlo todo.',6000);});
-$('btnFiltroTodo').addEventListener('click',()=>{guardarExcluidos([]);cerrar('sheetFiltro');});
+$('btnFiltroTodo').addEventListener('click',()=>{guardarFiltro({excluidos:[],sin_comisiones:false,meses_fuera:[]});cerrar('sheetFiltro');});
+$('fMeses').addEventListener('change',e=>{const c=e.target.closest('[data-fm]');if(!c)return;const m=c.dataset.fm,mf=mesesFuera().filter(x=>x!==m);if(!c.checked)mf.push(m);guardarMeses(mf);});
+$('fMeses').addEventListener('click',e=>{const b=e.target.closest('[data-solom]');if(!b)return;const m=b.dataset.solom;guardarMeses(mesesConGastos().filter(x=>x!==m));mes=m;cerrar('sheetFiltro');flash('Contando solo '+ymLabel(m,false)+'. Toca la línea «Contando…» de arriba para cambiarlo.',6000);});
 $('cats').addEventListener('click',e=>{const b=e.target.closest('[data-cat]');if(!b)return;const n=b.dataset.cat,ex=excluidos();guardarExcluidos(ex.includes(n)?ex.filter(x=>x!==n):[...ex,n]);});
 
 /* ---------- arranque ---------- */
