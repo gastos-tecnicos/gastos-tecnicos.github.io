@@ -1,8 +1,8 @@
 // Service worker de Gastos de Trabajo.
 // La app siempre intenta cargar la última versión de la red; la copia guardada
 // solo se usa si no hay cobertura. Los datos (Supabase) nunca se guardan aquí.
-const CACHE = 'gastos-v12';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
+const CACHE = 'gastos-v13';
+const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/logo-hoopo.png', './icons/abubilla.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
