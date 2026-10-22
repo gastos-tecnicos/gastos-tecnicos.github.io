@@ -455,7 +455,7 @@ header.top .eyebrow{margin-top:6px}
     </div>
     <div class="stack">
       <div class="f">
-        <span class="lab" id="lKMes">Mes</span>
+        <span class="lab" id="lKMes">Meses (puedes marcar varios)</span>
         <div class="seg auto" id="segKMes" role="group" aria-labelledby="lKMes"></div>
       </div>
       <div class="sum" id="kSum"></div>
@@ -935,34 +935,42 @@ $('btnReclPdf').addEventListener('click',()=>{
 });
 
 /* ---------- comisiones para WhatsApp ---------- */
-let kMes=null;
+let kMeses=[];
 const esVenta=g=>/comisi/i.test(label(g))||conceptoDe(g)?.modo==='unidades'||(Array.isArray(g.unidades)&&g.unidades.length>0);
 const mesesVentas=()=>[...new Set(items.filter(esVenta).map(g=>ymOf(g.fecha)))].filter(Boolean).sort().reverse();
-function textoCom(lista,ym){
-  const lineas=lista.map((g,i)=>`${i+1}. ${fechaEs(g.fecha)} · ${g.cliente||g.nota||'(sin nombre)'} · ${detalle(g)||label(g)} · ${eur(g.importe)}`);
-  const nombre=nombreUsuario();
-  return `*Comisiones de ${ymLabel(ym,false)}*${nombre?' · '+nombre:''}\n\nFecha instalación · Cliente · Producto · Importe\n${lineas.join('\n')}\n\n*Total: ${lista.length} venta${lista.length===1?'':'s'} · ${eur(sum(lista))}*`;
+const unir=l=>l.length<2?l.join(''):l.slice(0,-1).join(', ')+' y '+l[l.length-1];
+function textoCom(lista,meses){
+  const nombre=nombreUsuario(),orden=[...meses].sort();
+  const linea=(g,i)=>`${i+1}. ${fechaEs(g.fecha)} · ${g.cliente||g.nota||'(sin nombre)'} · ${detalle(g)||label(g)} · ${eur(g.importe)}`;
+  const mesN=m=>{const [y,n]=m.split('-').map(Number);return new Date(y,n-1,1).toLocaleDateString('es-ES',{month:'long'});};
+  const tit=orden.length===1?ymLabel(orden[0],false):new Set(orden.map(m=>m.slice(0,4))).size===1?unir(orden.map(mesN))+' de '+orden[0].slice(0,4):unir(orden.map(m=>ymLabel(m,false)));
+  let cuerpo;
+  if(orden.length===1)cuerpo=lista.map(linea).join('\n');
+  else cuerpo=orden.map(m=>{const l=lista.filter(g=>ymOf(g.fecha)===m);if(!l.length)return '';
+    return `*${cap(ymLabel(m,false))}*\n${l.map(linea).join('\n')}\nSubtotal: ${l.length} venta${l.length===1?'':'s'} · ${eur(sum(l))}`;}).filter(Boolean).join('\n\n');
+  return `*Comisiones de ${tit}*${nombre?' · '+nombre:''}\n\nFecha instalación · Cliente · Producto · Importe\n${cuerpo}\n\n*Total: ${lista.length} venta${lista.length===1?'':'s'} · ${eur(sum(lista))}*`;
 }
 function renderCom(){
   const ms=mesesVentas();
-  $('segKMes').innerHTML=ms.map(m=>`<button type="button" data-km="${m}" aria-pressed="${m===kMes}">${esc(cap(ymLabel(m,true)))}</button>`).join('');
-  const l=asc(items.filter(g=>esVenta(g)&&ymOf(g.fecha)===kMes));
+  $('segKMes').innerHTML=ms.map(m=>`<button type="button" data-km="${m}" aria-pressed="${kMeses.includes(m)}">${esc(cap(ymLabel(m,true)))}</button>`).join('');
+  const l=asc(items.filter(g=>esVenta(g)&&kMeses.includes(ymOf(g.fecha))));
   const prods={};for(const g of l)for(const u of (g.unidades||[]))prods[u.nombre]=(prods[u.nombre]||0)+(u.cantidad||0);
-  $('kSum').innerHTML=Object.entries(prods).map(([k,v])=>`<div><span>${esc(k)}</span><span class="num">${v}</span></div>`).join('')
+  $('kSum').innerHTML=!kMeses.length?'<div>Marca uno o varios meses.</div>':Object.entries(prods).map(([k,v])=>`<div><span>${esc(k)}</span><span class="num">${v}</span></div>`).join('')
     +`<div class="t"><span>${l.length} venta${l.length===1?'':'s'}</span><span class="num">${eur(sum(l))}</span></div>`
     +(l.some(g=>!g.cliente)?`<div class="warnTxt" style="font-size:13px">${l.filter(g=>!g.cliente).length} sin nombre de cliente: ábrelas desde la lista y añádelo.</div>`:'');
-  $('kTexto').value=l.length?textoCom(l,kMes):'';
+  $('kTexto').value=l.length?textoCom(l,kMeses):'';
   actualizarKWa();
 }
 function actualizarKWa(){$('lnkKWa').href='https://wa.me/?text='+encodeURIComponent($('kTexto').value);}
 function abrirCom(){
   const ms=mesesVentas();
   if(!ms.length){flash('Todavía no tienes comisiones apuntadas.');return;}
-  kMes=ms.includes(mes)?mes:ms[0];renderCom();abrir('sheetCom');
+  kMeses=[ms.includes(mes)?mes:ms[0]];renderCom();abrir('sheetCom');
 }
 $('btnCom2').addEventListener('click',abrirCom);
 $('btnBackCom').addEventListener('click',()=>cerrar('sheetCom'));
-$('segKMes').addEventListener('click',e=>{const b=e.target.closest('[data-km]');if(b){kMes=b.dataset.km;renderCom();}});
+$('segKMes').addEventListener('click',e=>{const b=e.target.closest('[data-km]');if(!b)return;const m=b.dataset.km;
+  kMeses=kMeses.includes(m)?kMeses.filter(x=>x!==m):[...kMeses,m];renderCom();});
 $('kTexto').addEventListener('input',actualizarKWa);
 $('btnKCopiar').addEventListener('click',async()=>{
   try{await navigator.clipboard.writeText($('kTexto').value);flash('Mensaje copiado. Pégalo en WhatsApp.');}
