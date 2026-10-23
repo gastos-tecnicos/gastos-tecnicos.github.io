@@ -293,7 +293,7 @@ header.top .eyebrow{margin-top:6px}
       <span><i>Por entregar</i> <b class="num" id="totSin">0,00 €</b></span>
       <span><i>Entregado, esperando</i> <b class="num" id="totPres">0,00 €</b></span>
     </div>
-    <span class="sub" id="totSub"></span>
+    <span class="sub" id="totSub" hidden></span>
     <button class="comtog" id="btnCom" type="button" aria-pressed="true" aria-haspopup="dialog"><i aria-hidden="true"></i><span id="comTxt">Contando todos los conceptos</span></button>
     <div class="hbtns">
       <button class="cobrar" id="btnCobro" type="button">Me han pagado en mano</button>
@@ -301,7 +301,7 @@ header.top .eyebrow{margin-top:6px}
     </div>
   </header>
   <div id="notice" class="notice" hidden></div>
-  <section class="fbar" id="fbar" aria-labelledby="fbarT">
+  <section class="fbar" id="fbar" aria-labelledby="fbarT" hidden>
     <div class="fh"><b id="fbarT">Qué cuenta en el total</b><button type="button" id="btnTodoBar" hidden>Contar todo</button></div>
     <span class="fl">Conceptos</span>
     <div class="pills" id="pCon" role="group" aria-label="Conceptos que cuentan"></div>
@@ -316,9 +316,8 @@ header.top .eyebrow{margin-top:6px}
   <div class="tools">
     <button class="ghost warn" id="btnPresentar" type="button" hidden>Marcar como entregados</button>
     <button class="ghost" id="btnPdf" type="button">PDF del mes</button>
-    <button class="ghost" id="btnExport" type="button">CSV</button>
   </div>
-  <div class="seg c4 filtro" id="segFiltro" role="group" aria-label="Mostrar">
+  <div class="seg c4 filtro" id="segFiltro" role="group" aria-label="Mostrar" hidden>
     <button type="button" data-f="todos">Todos</button>
     <button type="button" data-f="pendiente">Por entregar</button>
     <button type="button" data-f="presentado">Entregados</button>
@@ -329,11 +328,6 @@ header.top .eyebrow{margin-top:6px}
   <section class="cobros" id="secCobros" hidden>
     <h2>Cobros en mano</h2>
     <div class="list" id="listCobros"></div>
-  </section>
-  <section class="backup">
-    <b>Copia de seguridad</b>
-    <span>Descarga todos tus gastos (Excel y datos completos) con las fotos de los tickets en un .zip. Hazla una vez al mes y guárdala en Drive o en el ordenador.</span>
-    <button class="ghost" id="btnCopia" type="button">Descargar copia de seguridad</button>
   </section>
   <p class="autor">© 2026 David Villa. Aplicación creada por David Villa. Prohibido su uso, copia o distribución sin su autorización.</p>
 </div>
@@ -541,6 +535,16 @@ header.top .eyebrow{margin-top:6px}
       </div>
       <button type="button" class="ghost" id="btnNewCpt" style="align-self:flex-start">+ Nuevo concepto</button>
     </div>
+    <div class="stack">
+      <h2 class="secTitle">Exportar</h2>
+      <button class="ghost" id="btnExport" type="button" style="align-self:flex-start">CSV del mes</button>
+    </div>
+    <section class="backup" style="margin-top:20px">
+    <b>Copia de seguridad</b>
+    <span>Descarga todos tus gastos (Excel y datos completos) con las fotos de los tickets en un .zip. Hazla una vez al mes y guárdala en Drive o en el ordenador.</span>
+    <button class="ghost" id="btnCopia" type="button">Descargar copia de seguridad</button>
+  </section>
+
   </div>
 </div>
 
@@ -691,7 +695,7 @@ function avisos(){
   if(dups.length)out.push({txt:`${dups.length} posible${dups.length>1?'s':''} duplicado${dups.length>1?'s':''} (mismo día, concepto e importe)`,act:'Revisar',fn:()=>{const g=dups[0][0];mes=ymOf(g.fecha);render();openSheet(g);}});
   const actual=ymOf(nowParts().fecha);
   const mesesSin=[...new Set(contables().filter(g=>g.estado==='pendiente'&&ymOf(g.fecha)<actual).map(g=>ymOf(g.fecha)))].sort();
-  if(mesesSin.length&&!simple())out.push({txt:`Meses sin entregar: ${mesesSin.map(m=>ymLabel(m,true)).join(', ')}`,act:'Ver',fn:()=>{mes=mesesSin[0];filtro='pendiente';render();}});
+  if(mesesSin.length&&!simple())out.push({txt:`Meses sin entregar: ${mesesSin.map(m=>ymLabel(m,true)).join(', ')}`,act:'Ver',fn:()=>{mes=mesesSin[0];render();$('mTitle').scrollIntoView({behavior:'smooth'});}});
   const lim=diasAviso();
   const viejos=contables().filter(g=>noCobrado(g)&&diasDesde(esperaDesde(g))>lim);
   if(viejos.length)out.push({txt:`${eur(sum(viejos))} llevan más de ${lim} días esperando`,act:'',fn:null});
@@ -719,8 +723,8 @@ function render(){
   $('totSub').textContent=sub;
   $('split').hidden=simple();
   $('btnCom').setAttribute('aria-pressed',String(!filtroTxt()));
-  $('comTxt').textContent=filtroTxt()?'Contando '+filtroTxt()+' · quitar filtro':'Contando todo';
-  $('btnCom').hidden=!filtroTxt();$('btnTodoBar').hidden=!filtroTxt();
+  $('comTxt').textContent=(filtroTxt()?'Contando '+filtroTxt():'Contando todo')+' · cambiar';
+  $('btnTodoBar').hidden=!filtroTxt();
   const exC=excluidos(),exM=mesesFuera();
   $('pCon').innerHTML=nombresConceptos().map(n=>`<button type="button" class="pf" data-pc="${esc(n)}" aria-pressed="${!exC.includes(n)}">${esc(n)}</button>`).join('');
   $('pMes').innerHTML=mesesConGastos().map(m=>`<button type="button" class="pf" data-pm="${m}" aria-pressed="${!exM.includes(m)}">${esc(ymLabel(m,true))}</button>`).join('')||'<span class="hint">Aún no hay meses con gastos.</span>';
@@ -744,7 +748,7 @@ function render(){
   const sinMes=mi.filter(g=>g.estado==='pendiente');
   $('btnPresentar').hidden=!sinMes.length||simple();
   if(!presArmed)$('btnPresentar').textContent=`Marcar ${sinMes.length} como entregado${sinMes.length>1?'s':''}`;
-  if(simple()&&(filtro==='pendiente'||filtro==='presentado'))filtro='debe';
+  filtro='todos';
   if(!simple()&&filtro==='debe')filtro='todos';
   $('segFiltro').className='seg filtro '+(simple()?'c3':'c4');
   for(const b of $('segFiltro').children){b.hidden=simple()?(b.dataset.f==='pendiente'||b.dataset.f==='presentado'):b.dataset.f==='debe';b.setAttribute('aria-pressed',String(b.dataset.f===filtro));}
@@ -1296,6 +1300,7 @@ function renderCpts(){
   }).join('')||'<span class="hint">Todavía no hay conceptos.</span>';
 }
 function abrirAj(){
+  $('btnExport').textContent='CSV de '+ymLabel(mes,false);
   if(faltaV2){flash('Falta actualizar la base de datos: ejecuta v2.sql en Supabase y recarga.',9000);return;}
   $('aNombre').value=nombreUsuario();$('aEmpresa').value=empresa();$('aDias').value=diasAviso();$('aSimple').checked=simple();
   E=null;$('cptEditor').hidden=true;$('btnNewCpt').hidden=false;renderCpts();abrir('sheetAj');
@@ -1378,7 +1383,7 @@ function renderFiltro(){
   $('fLista').innerHTML=nombresConceptos().map((n,i)=>`<div class="frow"><label for="fx${i}"><input type="checkbox" id="fx${i}" data-fn="${esc(n)}" ${ex.includes(n)?'':'checked'}>${esc(n)}</label><button type="button" data-solo="${esc(n)}">Solo este</button></div>`).join('');
 }
 const contarTodo=()=>{guardarFiltro({excluidos:[],sin_comisiones:false,meses_fuera:[]});flash('Vuelves a contar todos los conceptos y meses.');};
-$('btnCom').addEventListener('click',contarTodo);
+$('btnCom').addEventListener('click',()=>{renderFiltro();abrir('sheetFiltro');});
 $('btnTodoBar').addEventListener('click',contarTodo);
 $('pCon').addEventListener('click',e=>{const b=e.target.closest('[data-pc]');if(!b)return;const n=b.dataset.pc,ex=excluidos();guardarExcluidos(ex.includes(n)?ex.filter(x=>x!==n):[...ex,n]);});
 $('pMes').addEventListener('click',e=>{const b=e.target.closest('[data-pm]');if(!b)return;const m=b.dataset.pm,mf=mesesFuera();guardarMeses(mf.includes(m)?mf.filter(x=>x!==m):[...mf,m]);});
