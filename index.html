@@ -244,7 +244,6 @@ header.top .eyebrow{margin-top:6px}
 .cobrar.wa{background:var(--accent);color:var(--on-accent)}
 .hbtns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
 .hbtns .cobrar{padding:0 12px;font-size:14px}
-.hbtns .cobrar.wa{grid-column:1/-1;order:-1}
 .row,.cat,.fbar,.sum,.crow,.box,.empty,.chk,.crow2,.frow{border:1px solid var(--line);box-shadow:var(--shadow)}
 .cat{border-top:3px solid var(--accent)}
 .cat b{font-weight:800}
@@ -298,8 +297,7 @@ header.top .eyebrow{margin-top:6px}
     <button class="comtog" id="btnCom" type="button" aria-pressed="true" aria-haspopup="dialog"><i aria-hidden="true"></i><span id="comTxt">Contando todos los conceptos</span></button>
     <div class="hbtns">
       <button class="cobrar" id="btnCobro" type="button">Me han pagado en mano</button>
-      <button class="cobrar wa" id="btnCom2" type="button">Comisiones por WhatsApp</button>
-      <button class="cobrar alt" id="btnRecl" type="button">Preparar reclamación</button>
+      <button class="cobrar wa" id="btnCom2" type="button">Enviar por WhatsApp</button>
     </div>
   </header>
   <div id="notice" class="notice" hidden></div>
@@ -696,7 +694,7 @@ function avisos(){
   if(mesesSin.length&&!simple())out.push({txt:`Meses sin entregar: ${mesesSin.map(m=>ymLabel(m,true)).join(', ')}`,act:'Ver',fn:()=>{mes=mesesSin[0];filtro='pendiente';render();}});
   const lim=diasAviso();
   const viejos=contables().filter(g=>noCobrado(g)&&diasDesde(esperaDesde(g))>lim);
-  if(viejos.length)out.push({txt:`${eur(sum(viejos))} llevan más de ${lim} días esperando`,act:'Reclamar',fn:()=>abrirRecl('todo')});
+  if(viejos.length)out.push({txt:`${eur(sum(viejos))} llevan más de ${lim} días esperando`,act:'',fn:null});
   for(const c of cobros){const d=round2(c.importe-c.marcado);
     if(d<=-0.01)out.push({txt:`En el cobro del ${fechaEs(c.fecha)} te dieron ${eur(-d)} menos`,act:'Ver',fn:()=>$('secCobros').scrollIntoView({behavior:'smooth'})});}
   return out;
@@ -705,7 +703,7 @@ let alertFns=[];
 function renderAvisos(){
   const a=loaded&&!faltaV2?avisos():[];alertFns=a.map(x=>x.fn);
   $('alerts').hidden=!a.length;
-  $('alertList').innerHTML=a.map((x,i)=>`<div class="alert"><span>${esc(x.txt)}</span><button type="button" data-al="${i}">${esc(x.act)}</button></div>`).join('');
+  $('alertList').innerHTML=a.map((x,i)=>`<div class="alert"><span>${esc(x.txt)}</span>${x.act?`<button type="button" data-al="${i}">${esc(x.act)}</button>`:''}</div>`).join('');
 }
 $('alertList').addEventListener('click',e=>{const b=e.target.closest('[data-al]');if(b)alertFns[+b.dataset.al]?.();});
 
@@ -920,7 +918,6 @@ function abrirRecl(a){
   if(!contables().some(noCobrado)){flash('No tienes nada pendiente de cobro.');return;}
   alcance=a||'todo';resetPdfBtns();renderRecl();abrir('sheetRecl');
 }
-$('btnRecl').addEventListener('click',()=>abrirRecl('todo'));
 $('btnBackRecl').addEventListener('click',()=>{cerrar('sheetRecl');resetPdfBtns();});
 $('segAlc').addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b){alcance=b.dataset.a;resetPdfBtns();renderRecl();}});
 $('rTexto').addEventListener('input',actualizarWa);
