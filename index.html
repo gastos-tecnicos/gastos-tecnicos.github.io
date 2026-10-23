@@ -1,12 +1,13 @@
 <!doctype html>
+<!-- © 2026 David Villa. Aplicación creada por David Villa. Prohibido su uso, copia o distribución sin su autorización. Todos los derechos reservados. -->
 <html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Gastos David">
+<meta name="apple-mobile-web-app-title" content="Gastos Hoopo">
 <meta name="theme-color" content="#111414">
-<title>Gastos David</title>
+<title>Gastos Hoopo</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -257,14 +258,21 @@ header.top .eyebrow{margin-top:6px}
 .backup{background:var(--head)}
 .login .eyebrow::before{background:var(--accent)}
 .login .brandimg{width:84px;height:auto}
+
+/* ===== Autoría ===== */
+.wm{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.wm span{transform:rotate(-30deg);font-size:15vw;font-weight:800;color:var(--fg);opacity:.035;white-space:nowrap;user-select:none}
+.wrap,.login{position:relative;z-index:1}
+.autor{font-size:11px;line-height:1.4;color:var(--muted);text-align:center;padding:24px 8px 0}
 </style>
 </head>
 <body>
+<div class="wm" aria-hidden="true"><span>© David Villa</span></div>
 
 <!-- ===== Login ===== -->
 <section class="login" id="vLogin" hidden>
   <img class="brandimg" src="icons/abubilla.png" alt="">
-  <span class="eyebrow" style="color:var(--muted)">Gastos David</span>
+  <span class="eyebrow" style="color:var(--muted)">Gastos Hoopo</span>
   <h1>Entra para ver lo que te deben</h1>
   <form id="loginForm" novalidate style="padding-top:0">
     <div class="f"><label for="lEmail">Correo</label><input type="email" id="lEmail" autocomplete="username" required></div>
@@ -273,12 +281,13 @@ header.top .eyebrow{margin-top:6px}
     <button class="save" id="btnLogin" type="submit">Entrar</button>
   </form>
   <p>El usuario se crea en Supabase, en Authentication › Users.</p>
+  <p class="autor">© 2026 David Villa. Aplicación creada por David Villa. Prohibido su uso, copia o distribución sin su autorización.</p>
 </section>
 
 <!-- ===== App ===== -->
 <div class="wrap" id="vApp" hidden>
   <header class="top">
-    <div class="toprow"><span class="brand"><img src="icons/logo-hoopo.png" alt="Hoopo"><span class="appname">Gastos David</span></span><span style="display:flex;gap:6px"><button class="out" id="btnAjustes" type="button">Ajustes</button><button class="out" id="btnOut" type="button">Salir</button></span></div>
+    <div class="toprow"><span class="brand"><img src="icons/logo-hoopo.png" alt="Hoopo"><span class="appname">Gastos Hoopo</span></span><span style="display:flex;gap:6px"><button class="out" id="btnAjustes" type="button">Ajustes</button><button class="out" id="btnOut" type="button">Salir</button></span></div>
     <span class="eyebrow">Te deben</span>
     <span class="big num" id="totPend">0,00 €</span>
     <div class="split" id="split">
@@ -328,6 +337,7 @@ header.top .eyebrow{margin-top:6px}
     <span>Descarga todos tus gastos (Excel y datos completos) con las fotos de los tickets en un .zip. Hazla una vez al mes y guárdala en Drive o en el ordenador.</span>
     <button class="ghost" id="btnCopia" type="button">Descargar copia de seguridad</button>
   </section>
+  <p class="autor">© 2026 David Villa. Aplicación creada por David Villa. Prohibido su uso, copia o distribución sin su autorización.</p>
 </div>
 <button class="fab" id="btnAdd" type="button" hidden>+ Añadir gasto</button>
 
