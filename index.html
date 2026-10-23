@@ -132,7 +132,7 @@ header.top{background:var(--head);color:var(--head-fg);margin-inline:-16px;paddi
 .empty b{font-size:24px;font-weight:700;letter-spacing:-.48px} .empty span{font-size:14px;color:var(--muted)}
 .notice{font-size:14px;color:var(--pend);background:var(--pend-bg);border-radius:12px;padding:12px 16px;margin-top:12px}
 
-.fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));width:min(528px,calc(100% - 32px));height:56px;border:0;border-radius:10px;background:var(--ink);color:var(--on-ink);font-size:16px;font-weight:500}
+.fab{z-index:5;position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));width:min(528px,calc(100% - 32px));height:56px;border:0;border-radius:10px;background:var(--ink);color:var(--on-ink);font-size:16px;font-weight:500}
 
 .sheet{position:fixed;inset:0;background:var(--bg);overflow-y:auto;z-index:10;-webkit-overflow-scrolling:touch}
 .sheet .wrap{padding-block:0 calc(32px + env(safe-area-inset-bottom,0px))}
@@ -259,14 +259,10 @@ header.top .eyebrow{margin-top:6px}
 .login .brandimg{width:84px;height:auto}
 
 /* ===== Autoría ===== */
-.wm{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden;display:flex;align-items:center;justify-content:center}
-.wm span{transform:rotate(-30deg);font-size:15vw;font-weight:800;color:var(--fg);opacity:.035;white-space:nowrap;user-select:none}
-.wrap,.login{position:relative;z-index:1}
 .autor{font-size:11px;line-height:1.4;color:var(--muted);text-align:center;padding:24px 8px 0}
 </style>
 </head>
 <body>
-<div class="wm" aria-hidden="true"><span>© David Villa</span></div>
 
 <!-- ===== Login ===== -->
 <section class="login" id="vLogin" hidden>
